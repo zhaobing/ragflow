@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl:*)",
+      "Bash(docker compose:*)",
+      "Bash(docker logs:*)",
+      "Bash(redis-cli:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker inspect:*)",
+      "Bash(docker volume rm:*)",
+      "Bash(docker volume ls:*)",
+      "Bash(docker system:*)",
+      "Bash(docker run:*)"
+    ]
+  }
+}

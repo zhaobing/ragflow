@@ -1,0 +1,117 @@
+graph TB
+    subgraph "Frontend Layer"
+        UI[React/TypeScript UI]
+        WS[WebSocket Client]
+    end
+
+    subgraph "API Gateway"
+        Gateway[Flask API Server]
+        Auth[Authentication]
+    end
+
+    subgraph "Core API Services"
+        FileAPI[file_app.py<br/>File Upload]
+        DocAPI[document_app.py<br/>Document Management]
+        KBAPI[kb_app.py<br/>Knowledge Base]
+        DialogAPI[dialog_app.py<br/>Chat Configuration]
+        ConvAPI[conversation_app.py<br/>Chat Session]
+        UserAPI[user_app.py<br/>User Management]
+    end
+
+    subgraph "Document Processing Pipeline"
+        Upload[File Upload]
+        Parser[DeepDoc Parser<br/>PDF/OCR/Layout]
+        Chunker[RAG Flow<br/>Chunking & Tokenization]
+        Embedder[Embedding Model<br/>Vector Generation]
+    end
+
+    subgraph "Question Answering Pipeline"
+        Query[User Query]
+        Retrieval[Retrieval Engine<br/>Vector + Keyword Search]
+        Reranker[Reranking Model<br/>Relevance Scoring]
+        LLM[LLM Generation<br/>Response Synthesis]
+    end
+
+    subgraph "Agent System"
+        Canvas[Agent Canvas<br/>Workflow Engine]
+        Components[Workflow Components<br/>LLM/Retrieval/Tools]
+        Templates[Pre-built Templates]
+        Tools[External Tools<br/>Wikipedia/Tavily/SQL]
+    end
+
+    subgraph "Storage Layer"
+        MinIO[MinIO<br/>Object Storage]
+        MySQL[(MySQL<br/>Metadata & Config)]
+        VectorDB[(Vector DB<br/>Elasticsearch/Infinity)]
+        Redis[(Redis<br/>Cache & Sessions)]
+    end
+
+    subgraph "LLM Services"
+        ChatModels[Chat Models<br/>GPT/Qwen/Claude]
+        EmbedModels[Embedding Models<br/>BGE/Qwen/M3]
+        RerankModels[Reranking Models]
+    end
+
+    %% Data Flow - Document Upload
+    UI -->|Upload File| WS
+    WS --> Gateway
+    Gateway --> Auth
+    Auth --> FileAPI
+    FileAPI --> Upload
+    Upload --> MinIO
+    MinIO --> Parser
+    Parser --> Chunker
+    Chunker --> Embedder
+    Embedder --> VectorDB
+    Parser --> MySQL
+    Chunker --> MySQL
+
+    %% Data Flow - Question Answering
+    UI -->|Ask Question| WS
+    WS --> Gateway
+    Gateway --> Auth
+    Auth --> ConvAPI
+    ConvAPI --> DialogAPI
+    DialogAPI --> Query
+    Query --> Retrieval
+    Retrieval --> VectorDB
+    Retrieval --> Redis
+    Retrieval --> Reranker
+    Reranker --> LLM
+    LLM --> ChatModels
+    LLM --> WS
+    WS --> UI
+
+    %% Agent System Flow
+    UI -->|Agent Workflow| Canvas
+    Canvas --> Components
+    Components --> Tools
+    Components --> Retrieval
+    Tools --> LLM
+
+    %% Metadata Flow
+    FileAPI --> MySQL
+    DocAPI --> MySQL
+    KBAPI --> MySQL
+    DialogAPI --> MySQL
+    ConvAPI --> MySQL
+    UserAPI --> MySQL
+
+    %% LLM Integration
+    Embedder --> EmbedModels
+    Reranker --> RerankModels
+
+    %% Styling
+    classDef frontend fill:#e1f5fe
+    classDef api fill:#f3e5f5
+    classDef processing fill:#e8f5e8
+    classDef storage fill:#fff3e0
+    classDef llm fill:#fce4ec
+    classDef agent fill:#f1f8e9
+
+    class UI,WS frontend
+    class Gateway,Auth,FileAPI,DocAPI,KBAPI,DialogAPI,ConvAPI,UserAPI api
+    class Upload,Parser,Chunker,Embedder,Query,Retrieval,Reranker,LLM processing
+    class MinIO,MySQL,VectorDB,Redis storage
+    class ChatModels,EmbedModels,RerankModels llm
+    class Canvas,Components,Templates,Tools agent

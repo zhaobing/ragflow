@@ -1,38 +1,9 @@
-valkey.exceptions.AuthenticationError: AUTH <password> called without any password configured for the default user. Are you sure your configuration is correct?
-2025-12-16 20:16:45,408 ERROR    26747 RedisDB.queue_consumer rag_flow_svr_queue got exception: AUTH <password> called without any password configured for the default user. Are you sure your configuration is correct?
-Traceback (most recent call last):
-  File "/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/rag/svr/task_executor.py", line 174, in collect
-    redis_msg = next(UNACKED_ITERATOR)
-                ^^^^^^^^^^^^^^^^^^^^^^
-StopIteration
-
-During handling of the above exception, another exception occurred:
-
-Traceback (most recent call last):
-  File "/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/rag/utils/redis_conn.py", line 264, in queue_consumer
-    group_info = self.REDIS.xinfo_groups(queue_name)
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/.venv/lib/python3.12/site-packages/valkey/commands/core.py", line 3810, in xinfo_groups
-    return self.execute_command("XINFO GROUPS", name)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/.venv/lib/python3.12/site-packages/valkey/client.py", line 564, in execute_command
-    conn = self.connection or pool.get_connection(command_name, **options)
-                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/.venv/lib/python3.12/site-packages/valkey/connection.py", line 1107, in get_connection
-    connection.connect()
-  File "/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/.venv/lib/python3.12/site-packages/valkey/connection.py", line 314, in connect
-    self.on_connect()
-  File "/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/.venv/lib/python3.12/site-packages/valkey/connection.py", line 379, in on_connect
-    auth_response = self.read_response()
-                    ^^^^^^^^^^^^^^^^^^^^
-  File "/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/.venv/lib/python3.12/site-packages/valkey/connection.py", line 546, in read_response
-    response = self._parser.read_response(disable_decoding=disable_decoding)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/.venv/lib/python3.12/site-packages/valkey/_parsers/resp2.py", line 15, in read_response
-    result = self._read_response(disable_decoding=disable_decoding)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/.venv/lib/python3.12/site-packages/valkey/_parsers/resp2.py", line 38, in _read_response
-    raise error
-valkey.exceptions.AuthenticationError: AUTH <password> called without any password configured for the default user. Are you sure your configuration is correct?
-^C2025-12-16 20:16:47,722 INFO     26747 Received interrupt signal, shutting down...
-Termination signal received. Shutting down..
+error - [icons] build failed: Error: Build failed with 79 errors:
+node_modules/enhanced-resolve/lib/Resolver.js:309:17: ERROR: [plugin: esbuildAliasPlugin] Can't resolve '/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/web/src/.umi/exports' in '/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/web/src/.umi'
+node_modules/enhanced-resolve/lib/Resolver.js:309:17: ERROR: [plugin: esbuildAliasPlugin] Can't resolve '/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/web/src/.umi/exports' in '/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/web/src/.umi/core'
+node_modules/enhanced-resolve/lib/Resolver.js:309:17: ERROR: [plugin: esbuildAliasPlugin] Can't resolve '/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/web/src/.umi/exports' in '/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/web/src/.umi/core'
+node_modules/enhanced-resolve/lib/Resolver.js:309:17: ERROR: [plugin: esbuildAliasPlugin] Can't resolve '/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/web/src/.umi/exports' in '/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/web/src/components/back-button'
+node_modules/enhanced-resolve/lib/Resolver.js:309:17: ERROR: [plugin: esbuildAliasPlugin] Can't resolve '/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/web/src/.umi/exports' in '/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/web/src/hooks'
+...
+error - ./src/.umi/umi.ts:16:0-103
+Module not found: Error: Can't resolve '/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/web/src/.umi/plugin-tailwindcss/tailwind.css' in '/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/web/src/.umi'

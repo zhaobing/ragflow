@@ -1,0 +1,29 @@
+
+
+# 启动过程
+docker compose -f docker/docker-compose-base.yml --profile elasticsearch up -d redis mysql minio
+export HF_ENDPOINT=https://hf-mirror.com
+source .venv/bin/activate
+export PYTHONPATH=$(pwd)
+bash docker/launch_backend_service.sh
+
+
+# 验证启动是否成功
+ps aux | grep 'ragflow_server.py'
+# 关闭
+pkill -f "ragflow_server.py|task_executor.py"
+# redis验证
+redis-cli -a infini_rag_flow -h localhost -p 6380
+
+--------------------------------------------------------------------------------
+
+# 配置信息
+user：admin
+email:admin@admin.com
+pwd:admin@admin.com
+
+# 模型配置页面
+http://localhost:9222/user-setting/model
+
+
+--------------------------------------------------------------------------------

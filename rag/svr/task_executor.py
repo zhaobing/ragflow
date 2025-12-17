@@ -1045,6 +1045,7 @@ async def do_handle_task(task):
 
 
 async def handle_task():
+    logging.info(f"try to handle task")
 
     global DONE_TASKS, FAILED_TASKS
     redis_msg, task = await collect()

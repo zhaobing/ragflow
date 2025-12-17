@@ -121,7 +121,7 @@ task_exe_debug(){
 
 # Function to execute ragflow_server with debug mode
 run_server_debug(){
-    local debug_port=$(find_available_port 9090)  # API服务器使用9090开始
+    local debug_port=9380  # 固定使用9380端口，与前端代理配置一致
     local retry_count=0
     echo "Using debug port $debug_port for API server"
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do

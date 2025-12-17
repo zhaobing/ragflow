@@ -5,5 +5,5 @@
 1. 给出调用链路分析
 2. 描述其中的技术点
 
-
+chunker = FACTORY[task["parser_id"].lower()]
 

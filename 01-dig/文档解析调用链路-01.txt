@@ -1,0 +1,77 @@
+rag/svr/task_executor.py:226
+cks = await asyncio.to_thread(
+
+
+def by_deepdoc(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
+    callback = callback
+    binary = binary
+    pdf_parser = pdf_cls() if pdf_cls else Pdf()
+    sections, tables = pdf_parser(
+        filename if not binary else binary,
+        from_page=from_page,
+        to_page=to_page,
+        callback=callback
+    )
+
+
+--------------------------------------------------------------------------------
+
+
+1. 给出调用链路分析
+2. 描述其中的技术点
+文档解析调用链路分析
+基于对代码的详细分析，以下是 http://localhost:9222/v1/document/run 端点的完整调用链路：
+1. 入口点 - api/apps/document_app.py:497
+方法: async def run()
+功能:
+处理POST请求 /v1/document/run
+验证用户权限和文档访问权
+根据请求参数（doc_ids, run状态）决定操作类型
+支持启动、取消、重新运行文档解析任务
+2. 任务调度 - api/db/services/document_service.py:1002
+方法: DocumentService.run()
+功能:
+根据文档类型（如表格）进行特殊处理
+如果配置了pipeline则调用 queue_dataflow
+否则调用 queue_tasks 将任务加入队列
+3. 任务队列管理 - api/db/services/task_service.py:326
+方法: queue_tasks()
+功能:
+根据文档类型创建任务（PDF按页、Excel按行）
+计算任务摘要用于去重优化
+将任务插入数据库并推送到Redis队列
+4. 任务执行器主循环 - rag/svr/task_executor.py:1159
+方法: async def main()
+功能:
+任务执行器的主入口点
+创建异步任务管理器
+从Redis队列消费任务并处理
+5. 任务处理 - rag/svr/task_executor.py:1047
+方法: async def handle_task()
+功能:
+从队列获取任务
+调用 do_handle_task 执行具体处理
+处理异常和任务状态更新
+6. 文档解析核心逻辑 - rag/svr/task_executor.py:834
+方法: async def do_handle_task()
+功能:
+根据任务类型选择处理方式（dataflow、raptor、graphrag或普通解析）
+初始化向量化和知识库
+调用相应的解析器处理文档
+7. 文档分块 - rag/svr/task_executor.py:226
+方法: async def build_chunks()
+功能:
+从MinIO获取文档二进制内容
+根据解析器类型选择相应的分块器（naive、paper、presentation等）
+调用分块器的 chunk() 方法将文档分块
+8. 解析器工厂 - rag/svr/task_executor.py:76
+字典: FACTORY
+功能:
+维护解析器类型到实现模块的映射
+支持多种解析器：naive、paper、presentation、manual、qa、table、book、resume、picture、one、audio、email、tag
+9. 后续处理流程
+向量化: 将文本块转换为向量表示
+存储: 将处理结果存储到Elasticsearch/Infinity
+进度回调: 更新任务进度状态
+关键错误处理
+您选中的代码行（rag/svr/task_executor.py:239）处理从MinIO获取文件超时的情况，调用 progress_callback(-1, ...) 将任务标记为失败状态。 整个调用链路采用了异步架构，通过Redis队列实现任务分发，支持多种文档解析器，具有良好的扩展性和容错性。

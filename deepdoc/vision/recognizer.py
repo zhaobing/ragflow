@@ -54,7 +54,9 @@ class Recognizer:
     @staticmethod
     def sort_Y_firstly(arr, threshold):
         def cmp(c1, c2):
+            # 比较两个元素的 top 坐标（上边界 
             diff = c1["top"] - c2["top"]
+            # 当两个元素垂直距离小于阈值时，认为在同一行,此时按 x0 坐标（左边界）排序（从左到右）
             if abs(diff) < threshold:
                 diff = c1["x0"] - c2["x0"]
             return diff

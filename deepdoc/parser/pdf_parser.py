@@ -280,6 +280,8 @@ class RAGFlowPdfParser:
 
     def __ocr(self, pagenum, img, chars, ZM=3, device_id: int | None = None):
         start = timer()
+        # 调用 OCR 检测器识别文本边界框
+        # [[x1,y1], [x2,y2], [x3,y3], [x4,y4]] (四边形角点)
         bxs = self.ocr.detect(np.array(img), device_id)
         logging.info(f"__ocr detecting boxes of a image cost ({timer() - start}s)")
 

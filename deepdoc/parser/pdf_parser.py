@@ -1064,7 +1064,8 @@ class RAGFlowPdfParser:
         except Exception:
             logging.exception("RAGFlowPdfParser __images__")
         logging.info(f"__images__ dedupe_chars cost {timer() - start}s")
-
+        #大纲提取
+        logging.info("zdig-准备提取大纲")
         self.outlines = []
         try:
             with pdf2_read(fnm if isinstance(fnm, str) else BytesIO(fnm)) as pdf:

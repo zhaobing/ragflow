@@ -67,41 +67,15 @@ cleanup() {
 # Trap SIGINT and SIGTERM to invoke cleanup
 trap cleanup SIGINT SIGTERM
 
-# Function to check if port is available
-check_port_available() {
-    local port=$1
-    if lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1; then
-        return 1  # Port is occupied
-    else
-        return 0  # Port is available
-    fi
-}
-
-# Function to find next available port starting from base
-find_available_port() {
-    local base_port=$1
-    local port=$base_port
-    while [ $port -lt 65535 ]; do
-        if check_port_available $port; then
-            echo $port
-            return 0
-        fi
-        port=$((port + 1))
-    done
-    echo "No available port found starting from $base_port" >&2
-    return 1
-}
-
-# Function to execute task_executor with debug mode
-task_exe_debug(){
+# Function to execute task_executor with retry logic
+task_exe(){
     local task_id=$1
-    local base_port=$((9100 + task_id * 10))  # 每个task使用不同端口，从9100开始，间隔10
-    local debug_port=$(find_available_port $base_port)
     local retry_count=0
-    echo "Using debug port $debug_port for task $task_id"
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
-        echo "Starting task_executor.py for task $task_id in debug mode on port $debug_port (Attempt $((retry_count+1)))"
-        LD_PRELOAD=$JEMALLOC_PATH $PY -m debugpy --listen $debug_port --wait-for-client rag/svr/task_executor.py "$task_id"
+        echo "Starting task_executor.py for task $task_id (Attempt $((retry_count+1)))"
+        # LD_PRELOAD=$JEMALLOC_PATH $PY rag/svr/task_executor.py "$task_id"
+        LD_PRELOAD=$JEMALLOC_PATH $PY -m debugpy --listen 9901 rag/svr/task_executor.py "$task_id"
+
         EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
             echo "task_executor.py for task $task_id exited successfully."
@@ -119,14 +93,12 @@ task_exe_debug(){
     fi
 }
 
-# Function to execute ragflow_server with debug mode
-run_server_debug(){
-    local debug_port=9380  # 固定使用9380端口，与前端代理配置一致
+# Function to execute ragflow_server with retry logic
+run_server(){
     local retry_count=0
-    echo "Using debug port $debug_port for API server"
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
-        echo "Starting ragflow_server.py in debug mode on port $debug_port (Attempt $((retry_count+1)))"
-        $PY -m debugpy --listen $debug_port --wait-for-client api/ragflow_server.py
+        echo "Starting ragflow_server.py (Attempt $((retry_count+1)))"
+        $PY api/ragflow_server.py
         EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
             echo "ragflow_server.py exited successfully."
@@ -144,55 +116,16 @@ run_server_debug(){
     fi
 }
 
-# 询问用户要调试什么
-echo "请选择调试模式:"
-echo "1. 只调试 API 服务器 (ragflow_server.py)"
-echo "2. 只调试任务执行器 (task_executor.py)"  
-echo "3. 同时调试 API 服务器和任务执行器"
-echo "4. 正常启动模式（无调试）"
+# Start task executors
+for ((i=0;i<WS;i++))
+do
+  task_exe "$i" &
+  PIDS+=($!)
+done
 
-read -p "请输入选择 (1-4): " choice
-
-case $choice in
-    1)
-        echo "启动 API 服务器调试模式..."
-        run_server_debug &
-        PIDS+=($!)
-        ;;
-    2)
-        echo "启动任务执行器调试模式..."
-        for ((i=0;i<WS;i++))
-        do
-          task_exe_debug "$i" &
-          PIDS+=($!)
-        done
-        ;;
-    3)
-        echo "启动完整调试模式..."
-        run_server_debug &
-        PIDS+=($!)
-        for ((i=0;i<WS;i++))
-        do
-          task_exe_debug "$i" &
-          PIDS+=($!)
-        done
-        ;;
-    4)
-        echo "正常启动模式..."
-        # 启动原始的非调试版本
-        for ((i=0;i<WS;i++))
-        do
-          LD_PRELOAD=$JEMALLOC_PATH $PY rag/svr/task_executor.py "$i" &
-          PIDS+=($!)
-        done
-        $PY api/ragflow_server.py &
-        PIDS+=($!)
-        ;;
-    *)
-        echo "无效选择，退出"
-        exit 1
-        ;;
-esac
+# Start the main server
+run_server &
+PIDS+=($!)
 
 # Wait for all background processes to finish
 wait

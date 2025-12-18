@@ -1,16 +1,19 @@
 
 
-# 启动过程
+# 后端启动过程
 docker compose -f docker/docker-compose-base.yml --profile elasticsearch up -d redis mysql minio
 export HF_ENDPOINT=https://hf-mirror.com
 source .venv/bin/activate
 export PYTHONPATH=$(pwd)
-bash docker/launch_backend_service.sh
 bash docker/launch_backend_debug.sh
+bash docker/launch_backend_service.sh
 
+# 前端启动
+cd web && npm run dev
 
 # 验证启动是否成功
 ps aux | grep 'ragflow_server.py'
+ps aux | grep 'ragflow_server.py\|task_executor.py'
 # 关闭
 pkill -f "ragflow_server.py|task_executor.py"
 # redis验证

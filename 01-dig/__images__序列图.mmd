@@ -1,0 +1,90 @@
+sequenceDiagram
+    participant Main as 主调用方
+    participant Images as __images__方法
+    participant PDF as PDF处理模块
+    participant OCR as OCR处理模块
+    participant Layout as 布局识别
+    participant LangDetect as 语言检测
+    participant Async as 异步处理
+
+    Note over Main, Async: 1. 初始化阶段
+    Main->>Images: 调用__images__(fnm, zoomin, page_from, page_to, callback)
+    Images->>Images: 初始化实例变量<br/>lefted_chars, mean_height, boxes等
+    
+    Note over Main, Async: 2. PDF页面图像转换
+    Images->>PDF: pdfplumber.open(fnm) with thread lock
+    PDF->>Images: 返回PDF对象
+    loop 每个页面 (page_from 到 page_to)
+        Images->>PDF: p.to_image(resolution=72*zoomin, antialias=True)
+        PDF->>Images: 返回页面图像
+        Images->>PDF: page.dedupe_chars().chars
+        PDF->>Images: 返回字符信息
+    end
+    Images->>Images: page_images = [图像列表]
+    Images->>Images: page_chars = [字符列表]
+    
+    Note over Main, Async: 3. PDF大纲提取
+    Images->>PDF: pdf2_read(fnm) 提取大纲
+    PDF->>Images: 返回大纲结构
+    Images->>Images: 递归解析outline层次结构
+    
+    Note over Main, Async: 4. 语言检测
+    Images->>LangDetect: 基于字符模式检测语言
+    LangDetect->>Images: 返回每页语言检测结果<br/>re.search(r"[a-zA-Z0-9,...]{30,}", text)
+    Images->>Images: 判断整体文档语言<br/>is_english = True/False
+    
+    Note over Main, Async: 5. 异步OCR处理
+    Images->>Async: 启动__img_ocr_launcher()
+    
+    par 并行OCR处理 (如果有parallel_limiter)
+        loop 每个页面
+            Async->>Async: __ocr_preprocess()
+            Note right of Async: 英文文档: chars = []<br/>中文文档: chars = page_chars[i]
+            Async->>Async: 计算mean_height, mean_width<br/>page_cum_height
+            Async->>Async: 创建异步任务wrapper()
+            Async->>Async: 并发控制semaphore[i % devices]
+            Async->>Async: await __img_ocr()
+        end
+    and 串行OCR处理 (无parallel_limiter)
+        loop 每个页面
+            Async->>Async: __ocr_preprocess()
+            Async->>Async: await __img_ocr(i, 0, img, chars, None)
+        end
+    end
+    
+    Note over Main, Async: 6. 单页OCR处理 (__img_ocr)
+    loop 每个异步任务
+        Async->>OCR: 字符间距预处理
+        Note right of OCR: 英文文档: chars为空,跳过处理<br/>中文文档: 智能添加空格分隔
+        OCR->>OCR: if chars[j+1]["x0"] - chars[j]["x1"] >= min(width)/2
+        OCR->>OCR: chars[j]["text"] += " "
+        
+        Async->>OCR: 调用__ocr(pagenum, img, chars, zoomin, device_id)
+        OCR->>OCR: 文本检测 ocr.detect()
+        OCR->>OCR: 坐标转换 /ZM 缩放
+        OCR->>OCR: 按Y轴优先排序 boxes
+        
+        OCR->>OCR: PDF字符与OCR融合
+        Note right of OCR: Recognizer.find_overlapped()<br/>将PDF字符添加到对应的OCR框中
+        
+        OCR->>OCR: 批量文字识别
+        Note right of OCR: 对无text的boxes进行OCR<br/>recognize_batch()批量处理
+        OCR->>OCR: 过滤空结果,更新统计信息
+    end
+    
+    Note over Main, Async: 7. 进度回调
+    loop 每6页处理完
+        Async->>Main: callback((i+1) * 0.6 / len(page_images))
+        Note right of Main: OCR阶段占总进度60%
+    end
+    
+    Note over Main, Async: 8. 后处理与重试
+    Images->>Images: 计算累积页面高度 np.cumsum()
+    Images->>Images: 检查OCR结果质量
+    
+    alt OCR结果为空且zoomin < 9
+        Images->>Images: 递归重试 __images__(fnm, zoomin*3, ...)
+        Note right of Images: 自动提高分辨率重新处理
+    end
+    
+    Images->>Main: 返回处理完成

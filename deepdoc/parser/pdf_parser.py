@@ -289,7 +289,21 @@ class RAGFlowPdfParser:
         if not bxs:
             self.boxes.append([])
             return
+        # 提取边界框坐标：line[0]    
+        # 提取置信度分数：line[1][0]（通常 line[1] 是元组，第一个元素是置信度）
         bxs = [(line[0], line[1][0]) for line in bxs]
+        # 文本框数据结构化
+        #{
+        # "x0": float,      # 左边界
+        # "x1": float,      # 右边界  
+        # "top": float,     # 上边界
+        # "bottom": float,  # 下边界
+        # "text": str,      # 文本内容
+        # "txt": str,       # OCR原始文本
+        # "chars": list,    # PDF字符列表
+        # "page_number": int # 页码
+        # }
+        # 阈值：mean_height / 3 用于判断是否为同一行
         bxs = Recognizer.sort_Y_firstly(
             [
                 {"x0": b[0][0] / ZM, "x1": b[1][0] / ZM, "top": b[0][1] / ZM, "text": "", "txt": t, "bottom": b[-1][1] / ZM, "chars": [], "page_number": pagenum}
@@ -299,26 +313,41 @@ class RAGFlowPdfParser:
             self.mean_height[pagenum - 1] / 3,
         )
 
+        # PDF 字符与 OCR 检测框融合
         # merge chars in the same rect
         for c in chars:
+            # 找到与字符 c 重叠度最高的 OCR 框
             ii = Recognizer.find_overlapped(c, bxs)
             if ii is None:
                 self.lefted_chars.append(c)
                 continue
+            # PDF 字符的高度
             ch = c["bottom"] - c["top"]
+            # OCR 框的高度
             bh = bxs[ii]["bottom"] - bxs[ii]["top"]
+            # 如果差异率 ≥ 70% 且字符非空格，认为不兼容
             if abs(ch - bh) / max(ch, bh) >= 0.7 and c["text"] != " ":
                 self.lefted_chars.append(c)
                 continue
+            # 通过兼容性检查的字符添加到对应 OCR 框的 chars 列表
             bxs[ii]["chars"].append(c)
 
+        # 将已匹配到 OCR 框的 PDF 字符按正确阅读顺序排列，并智能拼接成完整的文本内容
         for b in bxs:
+            # b代表ocr内的 orc框, b['text'为ocr识别的，b['chars']为pdf解析出来的
+            # 检查当前 OCR 框是否有关联的 PDF 字符
+            # 如果没有字符列表，删除 chars 属性并跳过处理,这种情况通常发生在完全依赖 OCR 的场景
             if not b["chars"]:
                 del b["chars"]
                 continue
+
+            # 提取该 OCR 框内所有 PDF 字符的高度值,作为排序阈值，判断字符是否在同一行
             m_ht = np.mean([c["height"] for c in b["chars"]])
+            # OCR 框内所有 PDF 字符 使用 Y 轴优先排序
             for c in Recognizer.sort_Y_firstly(b["chars"], m_ht):
+                # pdf解析的字为空,并且 orc框中的字符不为空
                 if c["text"] == " " and b["text"]:
+                    # orc框文本的最后一个字符是字母数字或标点
                     if re.match(r"[0-9a-zA-Zа-яА-Я,.?;:!%%]", b["text"][-1]):
                         b["text"] += " "
                 else:
@@ -1101,6 +1130,8 @@ class RAGFlowPdfParser:
             self.is_english = False
 
         async def __img_ocr(i, id, img, chars, limiter):
+            #orc之做准备，把相隔较大的英文字符串插入空格
+            #随即多线程行orc任务
             j = 0
             while j + 1 < len(chars):
                 if (

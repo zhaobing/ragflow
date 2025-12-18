@@ -218,6 +218,7 @@ class Recognizer:
 
     @staticmethod
     def find_overlapped(box, boxes_sorted_by_y, naive=False):
+        #在已排序的框列表中，快速找到与目标框 box 重叠面积最大的框索引，使用二分查找 + 精确计算的优化策略
         if not boxes_sorted_by_y:
             return
         bxs = boxes_sorted_by_y
@@ -241,6 +242,7 @@ class Recognizer:
                 e -= 1
             break
 
+        # 重叠度精确计算
         max_overlapped_i, max_overlapped = None, 0
         for i in range(s, e):
             ov = Recognizer.overlapped_area(bxs[i], box)

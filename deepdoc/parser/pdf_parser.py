@@ -350,26 +350,41 @@ class RAGFlowPdfParser:
                     # orc框文本的最后一个字符是字母数字或标点
                     if re.match(r"[0-9a-zA-Zа-яА-Я,.?;:!%%]", b["text"][-1]):
                         b["text"] += " "
-                else:
+                else: #orc文本框中的text字段，追加pdf解析出来的字符
                     b["text"] += c["text"]
             del b["chars"]
 
         logging.info(f"__ocr sorting {len(chars)} chars cost {timer() - start}s")
         start = timer()
+        # 需要进行 OCR 识别的文本框列表
         boxes_to_reg = []
+        # 将 PIL 图像转换为 NumPy 数组格式
         img_np = np.array(img)
+        
+        # 筛选需要识别的文本框
         for b in bxs:
+            # 只有文本内容为空的框才需要 OCR 识别,也就是说只有pdf解析失败(空字符串)并且orc识别有文本框，才需要再进行orc识别
             if not b["text"]:
+                # 从 PDF 坐标系转换回图像坐标系
                 left, right, top, bott = b["x0"] * ZM, b["x1"] * ZM, b["top"] * ZM, b["bottom"] * ZM
+                # 处理图像旋转、倾斜校正;裁剪出精确的文本区域;返回适合 OCR 识别的标准格式图像
                 b["box_image"] = self.ocr.get_rotate_crop_image(img_np, np.array([[left, top], [right, top], [right, bott], [left, bott]], dtype=np.float32))
+                # 将需要识别的文本框添加到列表
                 boxes_to_reg.append(b)
+                
+            # 删除 OCR 检测阶段的原始数据   
             del b["txt"]
+            
+        # 批量 OCR 识别
         texts = self.ocr.recognize_batch([b["box_image"] for b in boxes_to_reg], device_id)
+        # 将 OCR 识别结果更新到对应的文本框
         for i in range(len(boxes_to_reg)):
             boxes_to_reg[i]["text"] = texts[i]
             del boxes_to_reg[i]["box_image"]
+            
         logging.info(f"__ocr recognize {len(bxs)} boxes cost {timer() - start}s")
         bxs = [b for b in bxs if b["text"]]
+        #计算当前页面所有文本框的中位数高度,用于后续的布局分析和文本合并
         if self.mean_height[pagenum - 1] == 0:
             self.mean_height[pagenum - 1] = np.median([b["bottom"] - b["top"] for b in bxs])
         self.boxes.append(bxs)

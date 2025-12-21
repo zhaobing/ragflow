@@ -428,6 +428,7 @@ class Pdf(PdfParser):
         start = timer()
         first_start = start
         callback(msg="OCR started")
+        # 将PDF页面转换为图像,并且解析pdf，对于pdf未解析成功的，做orc识别补充
         self.__images__(
             filename if not binary else binary,
             zoomin,
@@ -438,14 +439,17 @@ class Pdf(PdfParser):
         callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
         logging.info("OCR({}~{}): {:.2f}s".format(from_page, to_page, timer() - start))
 
+        #对页面进行版面分析，识别标题、段落、表格、图片等布局元素
         start = timer()
         self._layouts_rec(zoomin)
         callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
-
+        
+        #使用表格识别模型提取表格的行列结构
         start = timer()
         self._table_transformer_job(zoomin)
         callback(0.65, "Table analysis ({:.2f}s)".format(timer() - start))
 
+        #将相邻的文本块按语义合并，形成连贯的段落
         start = timer()
         self._text_merge(zoomin=zoomin)
         callback(0.67, "Text merged ({:.2f}s)".format(timer() - start))

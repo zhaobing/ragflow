@@ -1,0 +1,6 @@
+self.ocr.recognize_batch
+self.ocr.get_rotate_crop_image
+
+
+
+https://www.zhihu.com/column/c_1907916816723981097

@@ -390,9 +390,12 @@ class RAGFlowPdfParser:
         self.boxes.append(bxs)
 
     def _layouts_rec(self, ZM, drop=True):
+        # page_images PDF转换的图像列表,boxes: OCR识别后的文本框列表
         assert len(self.page_images) == len(self.boxes)
+        # 调用LayoutRecognizer: 使用预训练的版面识别模型
         self.boxes, self.page_layout = self.layouter(self.page_images, self.boxes, ZM, drop=drop)
-        # cumlative Y
+
+        # cumlative Y; 跨页面坐标转换
         for i in range(len(self.boxes)):
             self.boxes[i]["top"] += self.page_cum_height[self.boxes[i]["page_number"] - 1]
             self.boxes[i]["bottom"] += self.page_cum_height[self.boxes[i]["page_number"] - 1]

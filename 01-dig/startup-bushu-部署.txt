@@ -31,3 +31,18 @@ http://localhost:9222/user-setting/model
 
 
 --------------------------------------------------------------------------------
+
+test - OCR与布局识别测试
+
+#  OCR Optical Character Recognition 光学字符串识别,输出: 演示结果位置的图像 OCR文本的txt文件
+python deepdoc/vision/t_ocr.py --inputs=/Users/zhaob/tmp/01-test/a.pdf --output_dir=/Users/zhaob/tmp/01-test/result-ocr
+
+# Layout recognition  布局识别
+python deepdoc/vision/t_recognizer.py --inputs=/Users/zhaob/tmp/01-test/a.pdf --threshold=0.2 --mode=layout --output_dir=/Users/zhaob/tmp/01-test/result-lr
+
+
+# TSR  Table Structure Recognition，表结构识别  表的结构可能非常复杂，比如层次结构标题、跨单元格和投影行标题  还有错误，应该是需要一些依赖库
+python deepdoc/vision/t_recognizer.py --inputs=/Users/zhaob/tmp/01-test/a.pdf --threshold=0.2 --mode=tsr --output_dir=/Users/zhaob/tmp/01-test/result-tsr
+
+
+

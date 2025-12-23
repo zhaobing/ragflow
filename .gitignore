@@ -31,6 +31,9 @@ docker/ragflow-logs/
 /logs
 rag/res/deepdoc
 
+# Exclude generated files
+/ocr_outputs
+
 # Exclude sdk generated files
 sdk/python/ragflow.egg-info/
 sdk/python/build/

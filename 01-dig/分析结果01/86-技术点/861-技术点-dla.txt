@@ -1,0 +1,48 @@
+TensorRT 的 DLA（Deep Learning Accelerator）是 NVIDIA 专为边缘和嵌入式设备设计的专用深度学习推理硬件加速器，主要用于低功耗、高能效的 AI 推理场景。
+
+
+DLAClient 是一个用于连接和使用 TensorRT DLA（Deep Learning
+  Accelerator）服务器的客户端类。让我详细解释它的作用和生效环境：
+
+  DLAClient 的作用
+
+   1. 硬件加速接口：DLAClient 作为客户端，连接到 TensorRT DLA 服务器，利用专用的深度学习加速器进行推理任务
+   2. 远程推理服务：通过网络接口将需要处理的数据发送到 DLA 服务器进行加速推理
+   3. 性能优化：利用 NVIDIA 的 DLA
+      硬件加速器来提升深度学习模型的推理速度，特别是对于布局识别这样的计算机视觉任务
+
+  生效环境
+
+  DLAClient 在以下条件下生效：
+
+   1. 环境变量设置：需要设置环境变量 TENSORRT_DLA_SVR
+   1    if os.environ.get("TENSORRT_DLA_SVR"):
+   2        from deepdoc.vision.dla_cli import DLAClient
+   3        self.client = DLAClient(os.environ["TENSORRT_DLA_SVR"])
+
+   2. DLA 服务器可用：需要有一个运行中的 TensorRT DLA 服务器，该服务器提供深度学习推理服务
+
+   3. 硬件支持：底层需要有支持 TensorRT DLA 的硬件设备（如 NVIDIA 的 Jetson 系列或支持 DLA 的其他平台）
+
+  具体实现逻辑
+
+  在 LayoutRecognizer 类中，DLAClient 的使用逻辑如下：
+
+   1. 当环境变量 TENSORRT_DLA_SVR 被设置时，系统会导入并实例化 DLAClient
+   2. 服务器地址从该环境变量中获取
+   3. 在 __call__ 方法中，如果 self.client 存在（即 DLA 客户端已初始化），则会使用客户端进行预测：
+   1    if self.client:
+   2        layouts = self.client.predict(image_list)
+   3    else:
+   4        layouts = super().__call__(image_list, thr, batch_size)
+
+  工作流程
+
+   1. 条件检查：检查环境变量 TENSORRT_DLA_SVR 是否设置
+   2. 客户端初始化：如果设置了该环境变量，导入并创建 DLAClient 实例
+   3. 推理执行：在实际推理时，优先使用 DLA 客户端进行预测，如果不可用则回退到标准的推理方法
+
+✦ 这种设计提供了一个可选的硬件加速路径，允许在有适当硬件支持的环境中显著提升布局识别的性能，同时保持了向后
+  兼容性，确保在没有 DLA 硬件的环境中仍能正常工作。
+
+注意：DLA 并非所有 GPU 都支持，仅集成在特定的 NVIDIA 嵌入式系统级芯片（SoC）中：

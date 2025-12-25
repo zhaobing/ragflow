@@ -141,8 +141,12 @@ def load_model(model_dir, nm, device_id: int | None = None):
 
 class TextRecognizer:
     def __init__(self, model_dir, device_id: int | None = None):
+        #期望的输入图像形状为 [3, 48, 320]（通道数、高度、宽度） 
         self.rec_image_shape = [int(v) for v in "3, 48, 320".split(",")]
+        #批处理大小为16，用于同时处理多个文本图像
         self.rec_batch_num = 16
+        # 配置CTC（连接时序分类）解码器，用于将模型输出转换为文本
+        # 使用来自 model_dir/ocr.res 的字符字典
         postprocess_params = {
             'name': 'CTCLabelDecode',
             "character_dict_path": os.path.join(model_dir, "ocr.res"),
@@ -150,6 +154,7 @@ class TextRecognizer:
         }
         self.postprocess_op = build_post_process(postprocess_params)
         self.predictor, self.run_options = load_model(model_dir, 'rec', device_id)
+        # 从ONNX模型获取输入张量信息，供后续推理时使用
         self.input_tensor = self.predictor.get_inputs()[0]
 
     def resize_norm_img(self, img, max_wh_ratio):
@@ -476,8 +481,9 @@ class TextDetector:
         #  后处理器初始化
         self.postprocess_op = build_post_process(postprocess_params)
         self.predictor, self.run_options = load_model(model_dir, 'det', device_id)
+        # 输入张量配置
         self.input_tensor = self.predictor.get_inputs()[0]
-
+        # 检测模型是否支持动态输入形状
         img_h, img_w = self.input_tensor.shape[2:]
         if isinstance(img_h, str) or isinstance(img_w, str):
             pass
@@ -487,6 +493,7 @@ class TextDetector:
                     'image_shape': [img_h, img_w]
                 }
             }
+        #预处理操作符创建    
         self.preprocess_op = create_operators(pre_process_list)
 
     def order_points_clockwise(self, pts):

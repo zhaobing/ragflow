@@ -1,2 +1,5 @@
-Q:TextDetector 使用的是什么模型？源仓库InfiniFlow/deepdoc中的模型det.onnx是重新训练的么？还是已经有的开源模a
+Q:TextDetector 使用的是什么模型？源仓库InfiniFlow/deepdoc中的模型det.onnx是重新训练的么？还是已经有的开源模型
 A:RAGFlow的det.onnx模型是PaddleOCR的开源预训练模型，经过格式转换和参数微调后使用
+
+Q:TextDetector与TextRecognizer的核心职责
+A:TextDetector->文本探测->文本边界框坐标;TextRecognizer->文本识别->文本内容

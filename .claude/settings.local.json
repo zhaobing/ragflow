@@ -23,7 +23,8 @@
       "Bash(./test_ports.sh)",
       "Bash(ls:*)",
       "Bash(source:*)",
-      "Bash(onnxruntime:*)"
+      "Bash(onnxruntime:*)",
+      "Bash(mkdir:*)"
     ]
   }
 }

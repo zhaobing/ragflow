@@ -87,7 +87,7 @@ class RAGFlowPdfParser:
             self.layouter = LayoutRecognizer(recognizer_domain)
         self.tbl_det = TableStructureRecognizer()
 
-        # 创建XGBoost模型
+        # 创建XGBoost模型，智能文本合并决策模型，用于判断上下相邻的两个文本块是否应该合并成一个段落
         self.updown_cnt_mdl = xgb.Booster()
         try:
             pip_install_torch()

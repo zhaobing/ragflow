@@ -1,0 +1,2 @@
+Q:TextDetector 使用的是什么模型？源仓库InfiniFlow/deepdoc中的模型det.onnx是重新训练的么？还是已经有的开源模a
+A:RAGFlow的det.onnx模型是PaddleOCR的开源预训练模型，经过格式转换和参数微调后使用

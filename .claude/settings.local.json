@@ -20,7 +20,10 @@
       "Bash(python:*)",
       "Bash(lsof:*)",
       "Bash(chmod:*)",
-      "Bash(./test_ports.sh)"
+      "Bash(./test_ports.sh)",
+      "Bash(ls:*)",
+      "Bash(source:*)",
+      "Bash(onnxruntime:*)"
     ]
   }
 }

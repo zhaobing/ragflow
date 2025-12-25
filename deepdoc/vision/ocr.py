@@ -94,17 +94,24 @@ def load_model(model_dir, nm, device_id: int | None = None):
         return False
 
     options = ort.SessionOptions()
+    #禁用CPU内存竞技场分配策略,减少内存占用
     options.enable_cpu_mem_arena = False
+    # 执行模式 ORT_SEQUENTIAL  OR ORT_PARALLEL
     options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+    #intra_op_num_threads 单个操作内的并行线程数
     options.intra_op_num_threads = 2
+    #inter_op_num_threads 不同操作间的并行线程数
     options.inter_op_num_threads = 2
 
     # https://github.com/microsoft/onnxruntime/issues/9509#issuecomment-951546580
     # Shrink GPU memory after execution
     run_options = ort.RunOptions()
     if cuda_is_available():
+        #GPU内存限制
         gpu_mem_limit_mb = int(os.environ.get("OCR_GPU_MEM_LIMIT_MB", "2048"))
+        #内存分配策略 下一个2的幂次方
         arena_strategy = os.environ.get("OCR_ARENA_EXTEND_STRATEGY", "kNextPowerOfTwo")
+        #设备号
         provider_device_id = 0 if device_id is None else device_id
         cuda_provider_options = {
             "device_id": provider_device_id, # Use specific GPU
@@ -119,6 +126,8 @@ def load_model(model_dir, nm, device_id: int | None = None):
             )
         logging.info(f"load_model {model_file_path} uses GPU (device {provider_device_id}, gpu_mem_limit={cuda_provider_options['gpu_mem_limit']}, arena_strategy={arena_strategy})")
     else:
+        #CPU模式配置
+        # 内存竞技场收缩，推理前: 分配内存;推理中: 使用内存;推理后: 执行收缩，释放内存
         sess = ort.InferenceSession(
             model_file_path,
             options=options,
@@ -464,6 +473,7 @@ class TextDetector:
         postprocess_params = {"name": "DBPostProcess", "thresh": 0.3, "box_thresh": 0.5, "max_candidates": 1000,
                               "unclip_ratio": 1.5, "use_dilation": False, "score_mode": "fast", "box_type": "quad"}
 
+        #  后处理器初始化
         self.postprocess_op = build_post_process(postprocess_params)
         self.predictor, self.run_options = load_model(model_dir, 'det', device_id)
         self.input_tensor = self.predictor.get_inputs()[0]

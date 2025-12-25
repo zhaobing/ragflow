@@ -1,10 +1,60 @@
 # RAGFlowPdfParser.__init__ 方法完整解析
 
-## 一、方法签名与参数
+## 一、概要：方法签名/调用链路/整体结构
 
+### A. 方法签名
 ```python
 def __init__(self, **kwargs):
 ```
+
+### B. 调用链路
+
+```Python
+task_executor.py#build_chunks->FACTORY->
+naive.py#chunk->PARSERS->by_deepdoc->Pdf->PdfParser(RAGFlowPdfParser).__init__
+
+```
+### C. 整体逻辑
+
+#### RAGFlowPdfParser的初始化过程
+```
+    OCR引擎初始化 
+    self.ocr = OCR()
+    布局识别器初始化
+    self.layouter = LayoutRecognizer
+    表格结构识别器初始化
+    self.tbl_det = TableStructureRecognizer()
+    文本合并决策引擎
+    self.updown_cnt_mdl = xgb.Booster()
+```
+
+### OCR引擎初始化（支持单/多GPU模式/CPU模式）
+```
+    TextDetector，文本探测器
+    作用：定位所有文本区域，输出文本边界框坐标
+    模型文件：det.onnx
+    模型：PaddleOCR模型
+
+    TextRecognizer，文本识别器
+    作用：文本识别，输出文本内容
+    模型文件：ocr.res rec.onnx
+    模型：PaddleOCR模型
+```
+
+
+#### LayoutRecognizer 布局识别器
+作用：识别版面类型，例如背景，文本，标题，图片，表，表标题，图表题，页眉，页脚，公式等
+注意：支持不同类型的布局识别，例如layout.laws.onnx法律；layout.manual.onnx操作手册等
+模型文件：layout.onnx
+
+
+#### TableStructureRecognizer 表格结构识别器
+作用：识别表格结构，例如表格的行列结构，单元格边界，合并单元格检测
+模型文件：tsr.onnx？
+
+#### xgb.Booster 智能文本合并决策模型 
+作用：智能判断两个相邻文本块（上下位置）是否应该合并
+模型文件：updown_concat_xgb.model
 
 **特点**：使用 `**kwargs` 接收任意关键字参数，提供灵活的配置扩展能力。
 

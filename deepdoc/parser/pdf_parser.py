@@ -85,6 +85,8 @@ class RAGFlowPdfParser:
         else:  # onnx
             logging.debug("Using Onnx LayoutRecognizer")
             self.layouter = LayoutRecognizer(recognizer_domain)
+            
+        # 表格结构识别器    
         self.tbl_det = TableStructureRecognizer()
 
         # 创建XGBoost模型，智能文本合并决策模型，用于判断上下相邻的两个文本块是否应该合并成一个段落

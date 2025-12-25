@@ -62,11 +62,14 @@ class RAGFlowPdfParser:
 
         """
 
+        # OCR引擎初始化 
         self.ocr = OCR()
+        # 检测GPU数量 → 创建并行控制器（如果GPU>1）
         self.parallel_limiter = None
         if settings.PARALLEL_DEVICES > 1:
             self.parallel_limiter = [asyncio.Semaphore(1) for _ in range(settings.PARALLEL_DEVICES)]
 
+        # 读取环境变量 → 选择布局识别器
         layout_recognizer_type = os.getenv("LAYOUT_RECOGNIZER_TYPE", "onnx").lower()
         if layout_recognizer_type not in ["onnx", "ascend"]:
             raise RuntimeError("Unsupported layout recognizer type.")
@@ -84,6 +87,7 @@ class RAGFlowPdfParser:
             self.layouter = LayoutRecognizer(recognizer_domain)
         self.tbl_det = TableStructureRecognizer()
 
+        # 创建XGBoost模型
         self.updown_cnt_mdl = xgb.Booster()
         try:
             pip_install_torch()
@@ -92,6 +96,7 @@ class RAGFlowPdfParser:
                 self.updown_cnt_mdl.set_param({"device": "cuda"})
         except Exception:
             logging.info("No torch found.")
+        # 加载模型文件
         try:
             model_dir = os.path.join(get_project_base_directory(), "rag/res/deepdoc")
             self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"))

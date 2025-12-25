@@ -413,12 +413,28 @@ class TextRecognizer:
 
 class TextDetector:
     def __init__(self, model_dir, device_id: int | None = None):
+        # 图像缩放配置 
+        # limit_side_len: 图像边长限制（960像素）
+        # limit_type: "max"表示限制最长边
+        # 如果图像宽高都小于960，不进行缩放
+        # 如果图像最长边大于960，按比例缩放到960
+        # 保持宽高比不变
+
+        #原图: 1920x1080 → 缩放后: 960x540
+        #原图: 800x600   → 缩放后: 800x600 (不变)
+        #原图: 3000x2000 → 缩放后: 960x640
         pre_process_list = [{
             'DetResizeForTest': {
                 'limit_side_len': 960,
                 'limit_type': "max",
             }
         }, {
+            #图像归一化配置
+            # - **mean**: ImageNet均值（用于预训练模型）
+            # - **std**: ImageNet标准差
+            # - **scales**: 像值缩放因子（1/255，将[0,255]转换到[0,1]）
+            # - **order**: "hwc"表示输入格式为高度-宽度-通道 
+
             'NormalizeImage': {
                 'std': [0.229, 0.224, 0.225],
                 'mean': [0.485, 0.456, 0.406],
@@ -427,11 +443,24 @@ class TextDetector:
             }
         }, {
             'ToCHWImage': None
-        }, {
+        }, 
+        # 保留指定的数据字段 
+        # `image`: 处理后的图像数据
+        # `shape`: 原始图像形状（用于后续坐标恢复）
+        {
             'KeepKeys': {
                 'keep_keys': ['image', 'shape']
             }
         }]
+
+        #后处理配置
+        # thresh 二值化阈值 | 控制文本区域检测的敏感度
+        # box_thresh 文本框置信度阈值  过滤低置信度检测框
+        # max_candidates 最大候选框数量 | 限制输出数量，提升性能
+        # unclip_ratio  扩展比例 | 扩大文本框以包含完整文本 
+        # use_dilation 是否使用膨胀 | 后处理形态学操作 |
+        # score_mode 评分模式 | "fast"快速模式，"slow"精确模式 |
+        # 边界框类型 | "quad"四边形，"poly"多边形 |
         postprocess_params = {"name": "DBPostProcess", "thresh": 0.3, "box_thresh": 0.5, "max_candidates": 1000,
                               "unclip_ratio": 1.5, "use_dilation": False, "score_mode": "fast", "box_type": "quad"}
 
@@ -546,6 +575,9 @@ class OCR:
         ^_-
 
         """
+        # 构建一个完整的OCR文字识别系统，初始化文本检测器和文本识别器组件
+
+        #模型目录确定
         if not model_dir:
             try:
                 model_dir = os.path.join(
@@ -553,17 +585,18 @@ class OCR:
                         "rag/res/deepdoc")
                 
                 # Append muti-gpus task to the list
+                # 检测GPU数量,多GPU模式: 为每个GPU创建独立的检测器和识别器
                 if settings.PARALLEL_DEVICES > 0:
                     self.text_detector = []
                     self.text_recognizer = []
                     for device_id in range(settings.PARALLEL_DEVICES):
                         self.text_detector.append(TextDetector(model_dir, device_id))
                         self.text_recognizer.append(TextRecognizer(model_dir, device_id))
-                else:
+                else: #单GPU/CPU模式
                     self.text_detector = [TextDetector(model_dir)]
                     self.text_recognizer = [TextRecognizer(model_dir)]
 
-            except Exception:
+            except Exception:#模型文件自动下载
                 model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc",
                                               local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"),
                                               local_dir_use_symlinks=False)
@@ -577,7 +610,7 @@ class OCR:
                 else:
                     self.text_detector = [TextDetector(model_dir)]
                     self.text_recognizer = [TextRecognizer(model_dir)]
-
+        # 配置参数初始化,文本识别置信度阈值（0.5）,裁剪图像结果索引
         self.drop_score = 0.5
         self.crop_image_res_index = 0
 

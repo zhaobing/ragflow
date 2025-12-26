@@ -36,7 +36,7 @@ PDF解析研究任务清单
 
 task-level-任务等级-B
 总结PaddleOCR的使用步骤,归一化处理等
-
+ImageNet归一化处理的原理没懂
 
 task-level-任务等级-C
 DBNet模型的理解和使用->文字检测算法之DBNet

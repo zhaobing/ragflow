@@ -551,10 +551,13 @@ class TextDetector:
         data = {'image': img}
 
         st = time.time()
+        # 预处理管道,缩放到960像素,HWC → CHW格式转换等
         data = transform(data, self.preprocess_op)
         img, shape_list = data
         if img is None:
             return None, 0
+
+        #添加batch维度 
         img = np.expand_dims(img, axis=0)
         shape_list = np.expand_dims(shape_list, axis=0)
         img = img.copy()
@@ -569,10 +572,22 @@ class TextDetector:
                     raise e
                 time.sleep(5)
 
+        # - 可微二值化: 概率图 → 二值图
+        # - 轮廓查找: 二值图 → 轮廓集合
+        # - 最小外接矩形: 轮廓 → 矩形框
+        # - 四边形拟合: 矩形框 → 四边形框
         post_result = self.postprocess_op({"maps": outputs[0]}, shape_list)
+        # 3.2 提取边界框
+        # 输出格式: [N, 4, 2]
+        # N: 文本框数量
+        # 4: 四个顶点（左上、右上、右下、左下）
+        # 2: x, y坐标
         dt_boxes = post_result[0]['points']
         dt_boxes = self.filter_tag_det_res(dt_boxes, ori_im.shape)
-
+        # box[0]: 左上角 (x0, y0)
+        # box[1]: 右上角 (x1, y1)
+        # box[2]: 右下角 (x2, y2)
+        # box[3]: 左下角 (x3, y3)
         return dt_boxes, time.time() - st
 
     def __del__(self):

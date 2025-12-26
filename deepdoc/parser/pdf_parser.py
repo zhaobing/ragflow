@@ -1094,21 +1094,24 @@ class RAGFlowPdfParser:
             logging.exception("total_page_number")
 
     def __images__(self, fnm, zoomin=3, page_from=0, page_to=299, callback=None):
-        self.lefted_chars = []
-        self.mean_height = []
-        self.mean_width = []
-        self.boxes = []
-        self.garbages = {}
-        self.page_cum_height = [0]
-        self.page_layout = []
-        self.page_from = page_from
+        self.lefted_chars = []      # 未匹配的PDF字符
+        self.mean_height = []        # 平均字符高度
+        self.mean_width = []         # 平均字符宽度
+        self.boxes = []              # OCR结果
+        self.garbages = {}           # 垃圾文本
+        self.page_cum_height = [0]   # 累积页面高度
+        self.page_layout = []        # 版面布局
+        self.page_from = page_from   # 起始页
+
         start = timer()
         try:
             with sys.modules[LOCK_KEY_pdfplumber]:
                 with pdfplumber.open(fnm) if isinstance(fnm, str) else pdfplumber.open(BytesIO(fnm)) as pdf:
+                    # pdfplumber读取PDF  
                     self.pdf = pdf
+                    # 转换为高分辨率图像 ,转换页面为高分辨率图像（216 DPI = 72 * 3） 
                     self.page_images = [p.to_image(resolution=72 * zoomin, antialias=True).annotated for i, p in enumerate(self.pdf.pages[page_from:page_to])]
-
+                    # 提取PDF字符信息
                     try:
                         self.page_chars = [[c for c in page.dedupe_chars().chars if self._has_color(c)] for page in self.pdf.pages[page_from:page_to]]
                     except Exception as e:
@@ -1126,7 +1129,7 @@ class RAGFlowPdfParser:
         try:
             with pdf2_read(fnm if isinstance(fnm, str) else BytesIO(fnm)) as pdf:
                 self.pdf = pdf
-
+                # 使用pypdf提取目录结构
                 outlines = self.pdf.outline
 
                 def dfs(arr, depth):
@@ -1145,6 +1148,7 @@ class RAGFlowPdfParser:
             logging.warning("Miss outlines")
 
         logging.debug("Images converted.")
+        # 语言检测
         self.is_english = [
             re.search(r"[ a-zA-Z0-9,/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]{30,}", "".join(random.choices([c["text"] for c in self.page_chars[i]], k=min(100, len(self.page_chars[i])))))
             for i in range(len(self.page_chars))
@@ -1155,6 +1159,8 @@ class RAGFlowPdfParser:
             self.is_english = False
 
         async def __img_ocr(i, id, img, chars, limiter):
+            # 以下功能应该只能在中文文档中运行如果是英文文档，并不使用pdfplumber进行解析
+            # 中文文档中也会有英文字符
             #orc之做准备，把相隔较大的英文字符串插入空格
             #随即多线程行orc任务
             j = 0
@@ -1179,9 +1185,14 @@ class RAGFlowPdfParser:
 
         async def __img_ocr_launcher():
             def __ocr_preprocess():
+                # 对中文文档：使用self.page_chars[i]中的原始PDF字符数据
+                # 对英文文档：使用空列表[]，因为英文OCR更可靠
                 chars = self.page_chars[i] if not self.is_english else []
+                #统计当前页面的字符高度中位数,单位为point,不需要缩放
                 self.mean_height.append(np.median(sorted([c["height"] for c in chars])) if chars else 0)
+                #统计当前页面的符宽度中位数,单位为point,不需要缩放
                 self.mean_width.append(np.median(sorted([c["width"] for c in chars])) if chars else 8)
+                #统计当前页面的高度,反向缩放，因为图片识别时进行过缩放，所以需要原始的高度
                 self.page_cum_height.append(img.size[1] / zoomin)
                 return chars
 

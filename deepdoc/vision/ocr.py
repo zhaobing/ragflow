@@ -138,7 +138,7 @@ def load_model(model_dir, nm, device_id: int | None = None):
     loaded_models[model_cached_tag] = loaded_model
     return loaded_model
 
-
+# 文本识别器
 class TextRecognizer:
     def __init__(self, model_dir, device_id: int | None = None):
         #期望的输入图像形状为 [3, 48, 320]（通道数、高度、宽度） 
@@ -159,16 +159,22 @@ class TextRecognizer:
 
     def resize_norm_img(self, img, max_wh_ratio):
         imgC, imgH, imgW = self.rec_image_shape
-
+        
+        # a. 计算目标宽度,根据max_wh_ratio计算初始目标宽度
         assert imgC == img.shape[2]
         imgW = int((imgH * max_wh_ratio))
+        # 检查模型输入张量是否指定了固定宽度
         w = self.input_tensor.shape[3:][0]
-        if isinstance(w, str):
+        if isinstance(w, str):# 如果宽度是字符串（动态形状），不处理
             pass
-        elif w is not None and w > 0:
+        elif w is not None and w > 0:# 如果模型指定了固定宽度，使用模型宽度
             imgW = w
+            
+        # 获取原始图像的高和宽    
         h, w = img.shape[:2]
         ratio = w / float(h)
+        # 如果按比例计算后的宽度超过最大宽度，限制为最大宽度
+       # 否则使用按比例计算的宽度（保持宽高比） 
         if math.ceil(imgH * ratio) > imgW:
             resized_w = imgW
         else:
@@ -375,12 +381,17 @@ class TextRecognizer:
         gc.collect()
 
     def __call__(self, img_list):
+        #识别裁剪后的文本图像，输出文本字符串和置信度
+        
+        # 每个img是numpy数组（H×W×3） 
         img_num = len(img_list)
         # Calculate the aspect ratio of all text bars
+        # 计算所有图像的宽高比  img.shape[0]为宽，img.shape[0]为高
         width_list = []
         for img in img_list:
             width_list.append(img.shape[1] / float(img.shape[0]))
         # Sorting can speed up the recognition process
+        #按宽高比排序（升序）
         indices = np.argsort(np.array(width_list))
         rec_res = [['', 0.0]] * img_num
         batch_num = self.rec_batch_num
@@ -389,6 +400,7 @@ class TextRecognizer:
         for beg_img_no in range(0, img_num, batch_num):
             end_img_no = min(img_num, beg_img_no + batch_num)
             norm_img_batch = []
+            # 计算batch中的最大宽高比
             imgC, imgH, imgW = self.rec_image_shape[:3]
             max_wh_ratio = imgW / imgH
             # max_wh_ratio = 0
@@ -396,11 +408,16 @@ class TextRecognizer:
                 h, w = img_list[indices[ino]].shape[0:2]
                 wh_ratio = w * 1.0 / h
                 max_wh_ratio = max(max_wh_ratio, wh_ratio)
+
+            # 预处理（resize + normalize + padding）    
             for ino in range(beg_img_no, end_img_no):
+                #  原始图像,batch最大宽高比
                 norm_img = self.resize_norm_img(img_list[indices[ino]],
                                                 max_wh_ratio)
                 norm_img = norm_img[np.newaxis, :]
                 norm_img_batch.append(norm_img)
+
+            # 合并为batch    
             norm_img_batch = np.concatenate(norm_img_batch)
             norm_img_batch = norm_img_batch.copy()
 
@@ -547,6 +564,7 @@ class TextDetector:
         gc.collect()
 
     def __call__(self, img):
+        # img来自pdfplumber的解析
         ori_im = img.copy()
         data = {'image': img}
 

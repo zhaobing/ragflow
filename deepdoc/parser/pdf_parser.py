@@ -311,6 +311,11 @@ class RAGFlowPdfParser:
         # "page_number": int # 页码
         # }
         # 阈值：mean_height / 3 用于判断是否为同一行
+        # "x0": b[0][0] 左上点的x轴坐标,得到左边界
+        # "x1": b[1][0] 右上点的x轴坐标,得到右边界
+        # "top": b[0][1] 左上点的y轴坐标,得到上边界
+        # "bottom": b[3][1] 左下点的y轴坐标,得到下边界
+        # 从上到下，从左到右进行排序
         bxs = Recognizer.sort_Y_firstly(
             [
                 {"x0": b[0][0] / ZM, "x1": b[1][0] / ZM, "top": b[0][1] / ZM, "text": "", "txt": t, "bottom": b[-1][1] / ZM, "chars": [], "page_number": pagenum}
@@ -352,6 +357,7 @@ class RAGFlowPdfParser:
             m_ht = np.mean([c["height"] for c in b["chars"]])
             # OCR 框内所有 PDF 字符 使用 Y 轴优先排序
             for c in Recognizer.sort_Y_firstly(b["chars"], m_ht):
+                # 如果pdfplumber解析出来的字符是空格字符串，并在这个box中，已经有文本了，并且这段文本是以1个字母/数字/标点作为结束的，那么结果中加入这个空格字符串
                 # pdf解析的字为空,并且 orc框中的字符不为空
                 if c["text"] == " " and b["text"]:
                     # orc框文本的最后一个字符是字母数字或标点
@@ -359,7 +365,7 @@ class RAGFlowPdfParser:
                         b["text"] += " "
                 else: #orc文本框中的text字段，追加pdf解析出来的字符
                     b["text"] += c["text"]
-            del b["chars"]
+            del b["chars"] #释放pdf解析出来的字符串，减少内存占用
 
         logging.info(f"__ocr sorting {len(chars)} chars cost {timer() - start}s")
         start = timer()
@@ -368,7 +374,7 @@ class RAGFlowPdfParser:
         # 将 PIL 图像转换为 NumPy 数组格式
         img_np = np.array(img)
         
-        # 筛选需要识别的文本框
+        # 筛选需要识别的文本框，ocr识别box中有文本，但是pdf解析出来orc框中没有文本的部分，提出box_image,准备做ocr文本识别
         for b in bxs:
             # 只有文本内容为空的框才需要 OCR 识别,也就是说只有pdf解析失败(空字符串)并且orc识别有文本框，才需要再进行orc识别
             if not b["text"]:
@@ -391,6 +397,7 @@ class RAGFlowPdfParser:
             
         logging.info(f"__ocr recognize {len(bxs)} boxes cost {timer() - start}s")
         bxs = [b for b in bxs if b["text"]]
+        
         #计算当前页面所有文本框的中位数高度,用于后续的布局分析和文本合并
         if self.mean_height[pagenum - 1] == 0:
             self.mean_height[pagenum - 1] = np.median([b["bottom"] - b["top"] for b in bxs])

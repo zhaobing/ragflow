@@ -176,63 +176,90 @@ class LayoutRecognizer4YOLOv10(LayoutRecognizer):
     ]
 
     def __init__(self, domain):
+        # 使用layout模型
         domain = "layout"
+        # 加载ONNX模型：layout.onnx;初始化推理会话;获取输入输出张量信息
         super().__init__(domain)
-        self.auto = False
-        self.scaleFill = False
-        self.scaleup = True
-        self.stride = 32
-        self.center = True
+        #设置YOLOv10特定参数
+        self.auto = False # 自动锚框（不使用
+        self.scaleFill = False # 缩放填充策略
+        self.scaleup = True # 允许放大
+        self.stride = 32 # 步长（下采样率）
+        self.center = True # 中心填充
 
     def preprocess(self, image_list):
+        # 将图像列表转换为YOLOv10模型所需的输入格式
+        # 预处理后的输入列表，每个元素包含
+        # image: [1, 3, H, W] 归一化后的图像
+        # scale_factor: [sx, sy, dw, dh] 缩放和填充信息
         inputs = []
-        new_shape = self.input_shape  # height, width
+        new_shape = self.input_shape  # 从模型获取目标形状 [height, width]
         for img in image_list:
             shape = img.shape[:2]  # current shape [height, width]
-            # Scale ratio (new / old)
+            
+            # Scale ratio (new / old) 计算缩放比例;保持宽高比，选择较小的缩放比例
             r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
-            # Compute padding
+
+            # Compute padding  计算缩放后的尺寸 new_width   new_height
             new_unpad = int(round(shape[1] * r)), int(round(shape[0] * r))
+            # 计算填充量
             dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]  # wh padding
             dw /= 2  # divide padding into 2 sides
             dh /= 2
             ww, hh = new_unpad
+            # 颜色空间转换
             img = np.array(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).astype(np.float32)
+            # 缩放图像
             img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
+            # 填充（居中）
             top, bottom = int(round(dh - 0.1)) if self.center else 0, int(round(dh + 0.1))
             left, right = int(round(dw - 0.1)) if self.center else 0, int(round(dw + 0.1))
             img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(114, 114, 114))  # add border
+            # 归一化
             img /= 255.0
+            # 维度转换
             img = img.transpose(2, 0, 1)
             img = img[np.newaxis, :, :, :].astype(np.float32)
+            #记录缩放信息
             inputs.append({self.input_names[0]: img, "scale_factor": [shape[1] / ww, shape[0] / hh, dw, dh]})
 
         return inputs
 
     def postprocess(self, boxes, inputs, thr):
-        thr = 0.08
-        boxes = np.squeeze(boxes)
-        scores = boxes[:, 4]
-        boxes = boxes[scores > thr, :]
+        # 将YOLOv10模型输出转换为标准版面格式
+        # boxes: 模型原始输出 [N, 6] 或 [N, 8] (x1,y1,x2,y2,score,cls)
+        # inputs: 预处理时的缩放信息
+        # thr: 置信度阈值（默认0.08，但方法内硬编码
+        thr = 0.08 # 硬编码阈值（覆盖参数）
+        boxes = np.squeeze(boxes) ## 移除batch维度
+        scores = boxes[:, 4] # 提取置信度
+        boxes = boxes[scores > thr, :] # 过滤低置信度框
         scores = scores[scores > thr]
         if len(boxes) == 0:
             return []
+
+        # 解析类别和坐标    
         class_ids = boxes[:, -1].astype(int)
         boxes = boxes[:, :4]
-        boxes[:, 0] -= inputs["scale_factor"][2]
-        boxes[:, 2] -= inputs["scale_factor"][2]
-        boxes[:, 1] -= inputs["scale_factor"][3]
-        boxes[:, 3] -= inputs["scale_factor"][3]
+        boxes[:, 0] -= inputs["scale_factor"][2] # x1 -= dw
+        boxes[:, 2] -= inputs["scale_factor"][2] # x2 -= dw
+        boxes[:, 1] -= inputs["scale_factor"][3] # y1 -= dh
+        boxes[:, 3] -= inputs["scale_factor"][3] # y2 -= dh
+        # 恢复缩放
         input_shape = np.array([inputs["scale_factor"][0], inputs["scale_factor"][1], inputs["scale_factor"][0], inputs["scale_factor"][1]])
         boxes = np.multiply(boxes, input_shape, dtype=np.float32)
 
+        # NMS去重
         unique_class_ids = np.unique(class_ids)
         indices = []
         for class_id in unique_class_ids:
+            # 提取当前类别的所有框
             class_indices = np.where(class_ids == class_id)[0]
             class_boxes = boxes[class_indices, :]
             class_scores = scores[class_indices]
+            # 对当前类别执行NMS
             class_keep_boxes = nms(class_boxes, class_scores, 0.45)
+            # 记录保留的索引
             indices.extend(class_indices[class_keep_boxes])
 
         return [{"type": self.label_list[class_ids[i]].lower(), "bbox": [float(t) for t in boxes[i].tolist()], "score": float(scores[i])} for i in indices]

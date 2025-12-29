@@ -114,19 +114,26 @@ class Recognizer:
 
     @staticmethod
     def overlapped_area(a, b, ratio=True):
+        #提取参考框的边界
         tp, btm, x0, x1 = a["top"], a["bottom"], a["x0"], a["x1"]
-        if b["x0"] > x1 or b["x1"] < x0:
+        
+        # 快速排斥实验：如果不重叠，直接返回 0
+        if b["x0"] > x1 or b["x1"] < x0: # 水平方向不相交
             return 0
-        if b["bottom"] < tp or b["top"] > btm:
+        if b["bottom"] < tp or b["top"] > btm: # 垂直方向不相交
             return 0
-        x0_ = max(b["x0"], x0)
-        x1_ = min(b["x1"], x1)
+            
+        # 计算重叠区域的边界（交集）
+        x0_ = max(b["x0"], x0) # 重叠区域左边界
+        x1_ = min(b["x1"], x1) # 重叠区域右边界
         assert x0_ <= x1_, "Bbox mismatch! T:{},B:{},X0:{},X1:{} ==> {}".format(
             tp, btm, x0, x1, b)
-        tp_ = max(b["top"], tp)
-        btm_ = min(b["bottom"], btm)
+        tp_ = max(b["top"], tp) # 重叠区域上边界
+        btm_ = min(b["bottom"], btm)  # 重叠区域下边界
         assert tp_ <= btm_, "Bbox mismatch! T:{},B:{},X0:{},X1:{} => {}".format(
             tp, btm, x0, x1, b)
+            
+        # 计算重叠面积
         ov = (btm_ - tp_) * (x1_ - x0_) if x1 - \
                                            x0 != 0 and btm - tp != 0 else 0
         if ov > 0 and ratio:
@@ -269,6 +276,9 @@ class Recognizer:
 
     @staticmethod
     def find_overlapped_with_threshold(box, boxes, thr=0.3):
+        #在候选框列表中，找出与目标框重叠度最大的框
+        #双向重叠度计算
+        
         if not boxes:
             return
         max_overlapped_i, max_overlapped, _max_overlapped = None, thr, 0

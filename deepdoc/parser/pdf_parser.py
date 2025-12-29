@@ -200,44 +200,68 @@ class RAGFlowPdfParser:
         return True
 
     def _table_transformer_job(self, ZM):
+        # 负责从版面分析结果中提取表格区域，并对表格进行精细的结构识别（行、列、表头、跨行单元格等）
         logging.debug("Table processing...")
-        imgs, pos = [], []
-        tbcnt = [0]
-        MARGIN = 10
-        self.tb_cpns = []
+        imgs, pos = [], [] # imgs: 裁剪的表格图像列表, pos: 裁剪位置(左上角)列表
+        tbcnt = [0]  # 记录每页的表格数量, 初始为0
+        MARGIN = 10  # 裁剪边距(像素), 防止表格边框被裁切
+        self.tb_cpns = [] # 表格组件列表: 存储识别出的行、列、表头等
+        # 确保版面分析结果和页面图像数量一致，防止索引越界
+        # self.page_layout：来自 _layouts_rec() 方法，每页的 layout 列表（包含 table、title、text 等类型）
+        # self.page_images：来自 __images__() 方法，PDF 页面转成的图像
         assert len(self.page_layout) == len(self.page_images)
+
+        # 筛选表格类型的layout 
         for p, tbls in enumerate(self.page_layout):  # for page
             tbls = [f for f in tbls if f["type"] == "table"]
             tbcnt.append(len(tbls))
             if not tbls:
                 continue
+
+            # tb["x0"] - MARGIN,    左边界: 向左扩展10个单位
+            # tb["top"] - MARGIN,   上边界: 向上扩展10个单位
+            # tb["x1"] + MARGIN,    右边界: 向右扩展10个单位
+            # tb["bottom"] + MARGIN 下边界: 向下扩展10个单位
+
             for tb in tbls:  # for table
                 left, top, right, bott = tb["x0"] - MARGIN, tb["top"] - MARGIN, tb["x1"] + MARGIN, tb["bottom"] + MARGIN
                 left *= ZM
                 top *= ZM
                 right *= ZM
                 bott *= ZM
+                # 记录裁剪位置（缩放后的左上角）
                 pos.append((left, top))
+                # 裁剪图像并添加到列表
                 imgs.append(self.page_images[p].crop((left, top, right, bott)))
 
         assert len(self.page_images) == len(tbcnt) - 1
         if not imgs:
             return
-        recos = self.tbl_det(imgs)
+
+        # 调用 TableStructureRecognizer 批量识别
+        recos = self.tbl_det(imgs) 
         tbcnt = np.cumsum(tbcnt)
-        for i in range(len(tbcnt) - 1):  # for page
+
+        for i in range(len(tbcnt) - 1):  # for page,遍历每页
             pg = []
-            for j, tb_items in enumerate(recos[tbcnt[i] : tbcnt[i + 1]]):  # for table
+            for j, tb_items in enumerate(recos[tbcnt[i] : tbcnt[i + 1]]):  # for table, 遍历表格
                 poss = pos[tbcnt[i] : tbcnt[i + 1]]
-                for it in tb_items:  # for table components
+                for it in tb_items:  # for table components,遍历表格组件
+                    # 加上裁剪偏移
                     it["x0"] = it["x0"] + poss[j][0]
                     it["x1"] = it["x1"] + poss[j][0]
                     it["top"] = it["top"] + poss[j][1]
                     it["bottom"] = it["bottom"] + poss[j][1]
+                    
+                    # 除以ZM归一化
                     for n in ["x0", "x1", "top", "bottom"]:
                         it[n] /= ZM
+                        
+                    #加上跨页累积高度    
                     it["top"] += self.page_cum_height[i]
                     it["bottom"] += self.page_cum_height[i]
+
+                    # 添加元信息,页码,表格索引
                     it["pn"] = i
                     it["layoutno"] = j
                     pg.append(it)
@@ -249,20 +273,25 @@ class RAGFlowPdfParser:
             return Recognizer.sort_Y_firstly(eles, 0)
 
         # add R,H,C,SP tag to boxes within table layout
-        headers = gather(r".*header$")
-        rows = gather(r".* (row|header)")
-        spans = gather(r".*spanning")
-        clmns = sorted([r for r in self.tb_cpns if re.match(r"table column$", r["label"])], key=lambda x: (x["pn"], x["layoutno"], x["x0"]))
+        headers = gather(r".*header$")  # 表头
+        rows = gather(r".* (row|header)") # 行
+        spans = gather(r".*spanning") # 跨行单元格
+        clmns = sorted([r for r in self.tb_cpns if re.match(r"table column$", r["label"])], key=lambda x: (x["pn"], x["layoutno"], x["x0"])) # 列（按X轴排序）
         clmns = Recognizer.layouts_cleanup(self.boxes, clmns, 5, 0.5)
+
+        #标注OCR文本框
         for b in self.boxes:
             if b.get("layout_type", "") != "table":
                 continue
+
+            # 标注行信息
             ii = Recognizer.find_overlapped_with_threshold(b, rows, thr=0.3)
             if ii is not None:
                 b["R"] = ii
                 b["R_top"] = rows[ii]["top"]
                 b["R_bott"] = rows[ii]["bottom"]
 
+            # 标注表头信息
             ii = Recognizer.find_overlapped_with_threshold(b, headers, thr=0.3)
             if ii is not None:
                 b["H_top"] = headers[ii]["top"]
@@ -271,12 +300,13 @@ class RAGFlowPdfParser:
                 b["H_right"] = headers[ii]["x1"]
                 b["H"] = ii
 
+            # 标注列信息
             ii = Recognizer.find_horizontally_tightest_fit(b, clmns)
             if ii is not None:
                 b["C"] = ii
                 b["C_left"] = clmns[ii]["x0"]
                 b["C_right"] = clmns[ii]["x1"]
-
+            # 标注跨行单元格
             ii = Recognizer.find_overlapped_with_threshold(b, spans, thr=0.3)
             if ii is not None:
                 b["H_top"] = spans[ii]["top"]
@@ -420,6 +450,7 @@ class RAGFlowPdfParser:
         if all("col_id" in b for b in boxes):
             return boxes
 
+        # 将box分别归到所在的页号
         by_page = defaultdict(list)
         for b in boxes:
             by_page[b["page_number"]].append(b)
@@ -431,13 +462,19 @@ class RAGFlowPdfParser:
                 page_cols[pg] = 1
                 continue
 
+            # Extract the left boundaries of all text boxes on the current page;提取当前页的所有文本框的左边界;
             x0s_raw = np.array([b["x0"] for b in bxs], dtype=float)
 
+            # The position of the leftmost text box;最左边的文本框位置
             min_x0 = np.min(x0s_raw)
+            # The position of the righmost text box; 最右边的文本框位置
             max_x1 = np.max([b["x1"] for b in bxs])
+            # Page content width;页面内容宽度
             width = max_x1 - min_x0
 
+            # Indentation tolerance: 12% of the page width;缩进容差：页面宽度的12%
             INDENT_TOL = width * 0.12
+            # Normalization processing of left boundary indentation to eliminate the impact caused by indentation;左边界缩进归一化处理，消除缩进带来的影响
             x0s = []
             for x in x0s_raw:
                 if abs(x - min_x0) < INDENT_TOL:
@@ -446,11 +483,12 @@ class RAGFlowPdfParser:
                     x0s.append([x])
             x0s = np.array(x0s, dtype=float)
 
+            # Try more with 4 columns (most documents will not exceed 4 columns);最多尝试4列（大多数文档不会超过4列）
             max_try = min(4, len(bxs))
             if max_try < 2:
                 max_try = 1
-            best_k = 1
-            best_score = -1
+            best_k = 1 # 最佳列数
+            best_score = -1 # 最佳轮廓系数
 
             for k in range(1, max_try + 1):
                 km = KMeans(n_clusters=k, n_init="auto")
@@ -501,7 +539,19 @@ class RAGFlowPdfParser:
         return boxes
 
     def _text_merge(self, zoomin=3):
-        # merge adjusted boxes
+        """
+    水平方向合并相邻的文本框
+
+    参数:
+        zoomin (int): 缩放倍数，默认为3
+                     用于传递给 _assign_column 方法
+
+    作用:
+        1. 为文本框分配列ID（col_id）
+        2. 在同一列内，将水平相邻且在同一行的文本框合并
+        3. 合并条件：同一页、同一列、同一layout、Y轴距离相近
+    """
+        # merge adjusted boxes,水平方向合并相邻的文本框
         bxs = self._assign_column(self.boxes, zoomin)
 
         def end_with(b, txt):

@@ -445,6 +445,7 @@ class RAGFlowPdfParser:
             self.boxes[i]["bottom"] += self.page_cum_height[self.boxes[i]["page_number"] - 1]
 
     def _assign_column(self, boxes, zoomin=3):
+        # 为文本框分配列ID（col_id）- 基于KMeans聚类的文档列识别
         if not boxes:
             return boxes
         if all("col_id" in b for b in boxes):
@@ -514,6 +515,7 @@ class RAGFlowPdfParser:
         logging.info(f"Global column_num decided by majority: {global_cols}")
 
 
+        # 最终列ID分配
         for pg, bxs in by_page.items():
             if not bxs:
                 continue
@@ -551,7 +553,7 @@ class RAGFlowPdfParser:
         2. 在同一列内，将水平相邻且在同一行的文本框合并
         3. 合并条件：同一页、同一列、同一layout、Y轴距离相近
     """
-        # merge adjusted boxes,水平方向合并相邻的文本框
+        # merge adjusted boxes
         bxs = self._assign_column(self.boxes, zoomin)
 
         def end_with(b, txt):
@@ -563,20 +565,24 @@ class RAGFlowPdfParser:
             tt = b.get("text", "").strip()
             return tt and any([tt.find(t.strip()) == 0 for t in txts])
 
-        # horizontally merge adjacent box with the same layout
+        # horizontally merge adjacent box with the same layout;水平合并具有相同布局的相邻框
+
         i = 0
         while i < len(bxs) - 1:
             b = bxs[i]
             b_ = bxs[i + 1]
 
+            # 检查条件1: 同一页且同一列
             if b["page_number"] != b_["page_number"] or b.get("col_id") != b_.get("col_id"):
                 i += 1
                 continue
 
+            # 检查条件2: 同一layout且非特殊类型
             if b.get("layoutno", "0") != b_.get("layoutno", "1") or b.get("layout_type", "") in ["table", "figure", "equation"]:
                 i += 1
                 continue
-
+            
+            # 检查条件3: Y轴距离相近（同一行）
             if abs(self._y_dis(b, b_)) < self.mean_height[bxs[i]["page_number"] - 1] / 3:
                 # merge
                 bxs[i]["x1"] = b_["x1"]
@@ -589,41 +595,63 @@ class RAGFlowPdfParser:
         self.boxes = bxs
 
     def _naive_vertical_merge(self, zoomin=3):
+        """
+    垂直方向合并相邻的文本框
+
+    参数:
+        zoomin (int): 缩放倍数，默认为3
+                     用于传递给 _assign_column 方法
+
+    作用:
+        1. 为文本框分配列ID（col_id）
+        2. 按页和列分组
+        3. 在同一列内，将垂直相邻的文本框合并
+        4. 构建完整的段落
+    """
         bxs = self._assign_column(self.boxes, zoomin)
 
+        # 按页和列分组
         grouped = defaultdict(list)
         for b in bxs:
             grouped[(b["page_number"], b.get("col_id", 0))].append(b)
 
         merged_boxes = []
         for (pg, col), bxs in grouped.items():
+            # 按Y轴和X轴排序
             bxs = sorted(bxs, key=lambda x: (x["top"], x["x0"]))
             if not bxs:
                 continue
 
+            # 计算平均高度
             mh = self.mean_height[pg - 1] if self.mean_height else np.median([b["bottom"] - b["top"] for b in bxs]) or 10
 
+            # 预处理过滤
             i = 0
             while i + 1 < len(bxs):
                 b = bxs[i]
                 b_ = bxs[i + 1]
 
+                # 移除跨页的孤立标题
                 if b["page_number"] < b_["page_number"] and re.match(r"[0-9  •一—-]+$", b["text"]):
                     bxs.pop(i)
                     continue
 
+                # 移除空文本框
                 if not b["text"].strip():
                     bxs.pop(i)
                     continue
 
+                # 检查layout一致性;不同layout区域可能属于不同的内容块;例如：标题layout和正文layout不应合并
                 if not b["text"].strip() or b.get("layoutno") != b_.get("layoutno"):
                     i += 1
                     continue
 
+                # 过大的间距（可能是不同段落）,1.5倍间距
                 if b_["top"] - b["bottom"] > mh * 1.5:
                     i += 1
                     continue
 
+                #水平重叠检查,重叠率小于0.3,就不会进行合并
                 overlap = max(0, min(b["x1"], b_["x1"]) - max(b["x0"], b_["x0"]))
                 if overlap / max(1, min(b["x1"] - b["x0"], b_["x1"] - b_["x0"])) < 0.3:
                     i += 1
@@ -866,6 +894,31 @@ class RAGFlowPdfParser:
             self.boxes.pop(i)
 
     def _extract_table_figure(self, need_image, ZM, return_html, need_position, separate_tables_figures=False):
+        """
+    从文本框中提取表格和图片，并进行图文分离处理
+
+    参数:
+        need_image (bool): 是否需要提取图像
+        ZM (int): 缩放倍数（zoomin），用于坐标转换
+        return_html (bool): 是否返回HTML格式的表格
+        need_position (bool): 是否返回位置信息
+        separate_tables_figures (bool): 是否分离表格和图片的返回结果
+
+    返回:
+        如果 separate_tables_figures=False:
+            List[Tuple[image, text]]: [(图像, 描述文本)]
+            或
+            List[Tuple[image, text, positions]]: [(图像, 描述文本, 位置)]
+
+        如果 separate_tables_figures=True:
+            Tuple[List[Tuple[image, text]], List[Tuple[image, text]]]: (表格列表, 图片列表)
+
+    作用:
+        1. 从boxes中分离出表格和图片
+        2. 为表格和图片匹配标题（caption）
+        3. 裁剪表格和图片的图像区域
+        4. 构建表格的HTML/文本表示
+    """
         tables = {}
         figures = {}
         # extract figure and table boxes
@@ -876,9 +929,14 @@ class RAGFlowPdfParser:
             if "layoutno" not in self.boxes[i]:
                 i += 1
                 continue
+            
+            # 构建layout唯一标识：页码-layout序号
             lout_no = str(self.boxes[i]["page_number"]) + "-" + str(self.boxes[i]["layoutno"])
+            # 记录不可合并的layout（有标题、引用等）
             if TableStructureRecognizer.is_caption(self.boxes[i]) or self.boxes[i]["layout_type"] in ["table caption", "title", "figure caption", "reference"]:
                 nomerge_lout_no.append(lst_lout_no)
+                
+            # 提取表格
             if self.boxes[i]["layout_type"] == "table":
                 if re.match(r"(数据|资料|图表)*来源[:： ]", self.boxes[i]["text"]):
                     self.boxes.pop(i)
@@ -889,6 +947,8 @@ class RAGFlowPdfParser:
                 self.boxes.pop(i)
                 lst_lout_no = lout_no
                 continue
+            
+            # 提取图片
             if need_image and self.boxes[i]["layout_type"] == "figure":
                 if re.match(r"(数据|资料|图表)*来源[:： ]", self.boxes[i]["text"]):
                     self.boxes.pop(i)
@@ -901,6 +961,7 @@ class RAGFlowPdfParser:
                 continue
             i += 1
 
+        # 跨页表格合并
         # merge table on different pages
         nomerge_lout_no = set(nomerge_lout_no)
         tbls = sorted([(k, bxs) for k, bxs in tables.items()], key=lambda x: (x[1][0]["top"], x[1][0]["x0"]))

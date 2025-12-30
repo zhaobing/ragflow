@@ -1146,18 +1146,39 @@ class RAGFlowPdfParser:
         return
 
     def _line_tag(self, bx, ZM):
+        """
+        为PDF文档中的文本块生成位置标签,用于标识文本块在文档中的精确位置。该标签以特定格式编码了跨页文本块的位置信息。        
+        功能：
+            1. 跨页文本块处理: 处理跨越多页的文本块,记录涉及的页码序列
+            2. 位置坐标计算: 计算文本块在文档中的相对坐标位置
+            3. 标签格式化输出: 生成标准化的位置标签字符串
+        :param self: Description
+        :param bx: Description
+        :param ZM: Description
+        """
+        #  初始化页码列表,记录文本块起始页
         pn = [bx["page_number"]]
+        
+        # 减去该页面之前的累积高度,得到相对于当前页面的坐标
         top = bx["top"] - self.page_cum_height[pn[0] - 1]
         bott = bx["bottom"] - self.page_cum_height[pn[0] - 1]
+
+        # 边界检查 - 防止页码越界
         page_images_cnt = len(self.page_images)
         if pn[-1] - 1 >= page_images_cnt:
             return ""
+            
+        # 处理跨页文本块,当文本块底部超过当前页面高度时,说明文本块跨越多页
         while bott * ZM > self.page_images[pn[-1] - 1].size[1]:
+            #减去当前页面高度,计算在下一页的剩余高度
             bott -= self.page_images[pn[-1] - 1].size[1] / ZM
+            # 添加下一页到页码列表
             pn.append(pn[-1] + 1)
             if pn[-1] - 1 >= page_images_cnt:
                 return ""
-
+                
+        # 生成格式化标签
+        # 格式: @@页码1-页码2-...	x0	x1	top	bottom##
         return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format("-".join([str(p) for p in pn]), bx["x0"], bx["x1"], top, bott)
 
     def __filterout_scraps(self, boxes, ZM):

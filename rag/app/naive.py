@@ -43,6 +43,8 @@ def by_deepdoc(filename, binary=None, from_page=0, to_page=100000, lang="Chinese
     callback = callback
     binary = binary
     pdf_parser = pdf_cls() if pdf_cls else Pdf()
+    
+    # 解析完成，获取到了文本块和表结构
     sections, tables = pdf_parser(
         filename if not binary else binary,
         from_page=from_page,
@@ -460,12 +462,18 @@ class Pdf(PdfParser):
             logging.info("layouts cost: {}s".format(timer() - first_start))
             return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls, figures
         else:
+            # 提取图，表 
             tbls = self._extract_table_figure(True, zoomin, True, True)
+            # 垂直相邻文本块合并
             self._naive_vertical_merge()
+            # 向下合并，空实现
             self._concat_downward()
+            # 最终阅读顺序重排
             self._final_reading_order_merge()
             # self._filter_forpages()
             logging.info("layouts cost: {}s".format(timer() - first_start))
+            # 对文本块标记行标签,格式: @@页码1-页码2-...	x0	x1	top	bottom##
+            # 返回 文本块，行标签，以及表结构
             return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls
 
 
@@ -728,7 +736,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         name = layout_recognizer.strip().lower()
         parser = PARSERS.get(name, by_plaintext)
         callback(0.1, "Start to parse.")
-
+        # digzhaob
         sections, tables, pdf_parser = parser(
             filename = filename,
             binary = binary,

@@ -327,6 +327,35 @@ def tokenize_chunks_with_images(chunks, doc, eng, images, child_delimiters_patte
 
 
 def tokenize_table(tbls, doc, eng, batch_size=10):
+    """
+    将PDF解析出的表格数据转换为可索引的文档块，每个表格内容经过分词处理后存储到搜索引擎。
+
+    表格数据预处理: 接收PDF解析出的表格（包含图片和行数据）
+    批量处理: 将多行表格数据分批合并，避免单个chunk过大
+    文档元数据构建: 为每个表格chunk添加文档元信息（文件名、标题等）
+    类型标记: 标记chunk类型为"table"或"image"
+    位置信息附加: 记录表格在PDF中的位置（页码、坐标）
+    分词处理: 调用tokenize函数生成粗粒度和细粒度分词
+    
+    :param tbls: Description
+    :param doc: Description
+    :param eng: Description
+    :param batch_size: Description
+
+    输出结果
+    List[dict]
+  - 每个字典包含：
+    - content_with_weight: 原始文本内容
+    - content_ltks: 粗粒度分词
+    - content_sm_ltks: 细粒度分词
+    - doc_type_kwd: "table" 或 "image"
+    - image: 表格截图（如果有）
+    - page_num_int: 页码列表
+    - position_int: 位置坐标列表
+    - top_int: 顶部坐标列表
+    - 继承doc的所有字段（docnm_kwd, title_tks等）
+    """
+
     res = []
     # add tables
     for (img, rows), poss in tbls:
@@ -785,7 +814,29 @@ def hierarchical_merge(bull, sections, depth):
 
 
 def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0):
+    """
+    核心功能：将多个文本sections按照token数量限制合并成chunks，支持重叠合并以保持上下文连续性。    
+
+    智能合并: 将小段文本合并成指定大小的chunks
+    
+    Token控制: 确保每个chunk不超过token限制（默认128）
+    
+    重叠处理: 支持chunk间的重叠，保持上下文连续性
+    
+    位置标记保留: 保留PDF解析时的位置标签（@@...##格式）
+    
+    自定义分隔符: 支持用户自定义的分隔符进行强制分割
+    
+    短文本过滤: 过滤掉token数<8的过短内容 
+    
+    :param sections: Description
+    :type sections: str | list
+    :param chunk_token_num: Description
+    :param delimiter: Description
+    :param overlapped_percent: Description
+    """
     from deepdoc.parser.pdf_parser import RAGFlowPdfParser
+    # 输入标准化
     if not sections:
         return []
     if isinstance(sections, str):
@@ -817,8 +868,10 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
             cks[-1] += t
             tk_nums[-1] += tnum
 
+    #解析自定义分隔符
     custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
     has_custom = bool(custom_delimiters)
+    # 有自定义分隔符，强制分割模式
     if has_custom:
         custom_pattern = "|".join(re.escape(t) for t in sorted(set(custom_delimiters), key=len, reverse=True))
         cks, tk_nums = [], []
@@ -847,18 +900,24 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
     from deepdoc.parser.pdf_parser import RAGFlowPdfParser
     if not texts or len(texts) != len(images):
         return [], []
-    cks = [""]
+    cks = [""] # chunk列表
     result_images = [None]
-    tk_nums = [0]
+    tk_nums = [0]  # token计数列表
 
     def add_chunk(t, image, pos=""):
         nonlocal cks, result_images, tk_nums, delimiter
+        
+        # 计算token数
         tnum = num_tokens_from_string(t)
+        # 处理位置标签
         if not pos:
             pos = ""
+        # 过滤短文本
         if tnum < 8:
             pos = ""
         # Ensure that the length of the merged chunk does not exceed chunk_token_num
+        # 判断是否需要新建chunk
+        # 条件: 当前chunk为空 OR 当前chunk的token数超过阈值
         if cks[-1] == "" or tk_nums[-1] > chunk_token_num * (100 - overlapped_percent)/100.:
             if cks:
                 overlapped = RAGFlowPdfParser.remove_tag(cks[-1])

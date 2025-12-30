@@ -951,6 +951,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                                                 "delimiter", "\n!?。；！？"))
             res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli))
         else:
+            # digzhaob
+            
             chunks = naive_merge(
                 sections, int(parser_config.get(
                     "chunk_token_num", 128)), parser_config.get(

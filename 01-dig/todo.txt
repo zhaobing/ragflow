@@ -1,17 +1,6 @@
 
 PDF解析与向量化研究任务拆分
-📍 任务1: 表格向量化处理
-    代码位置: naive.py:750 研究内容: tokenize_table(tables, doc, is_english)
-    表格数据如何被转换为向量
-    表格的tokenization策略
-    表格与普通文本的向量化差异
-    研究文件：rag/nlp/__init__.py 中的 tokenize_table 函数
-📍 任务2: 文本块合并 - naive_merge
-代码位置: naive.py:946-949 研究内容: naive_merge(sections, chunk_token_num, delimiter)
-sections如何按语义合并成chunks
-chunk_token_num控制策略
-delimiter分割符的作用机制
-研究文件：rag/nlp/__init__.py 中的 naive_merge 函数
+
 📍 任务3: 分词与向量化 - tokenize_chunks
 代码位置: naive.py:951 研究内容: tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern)
 chunks如何被tokenize
@@ -19,23 +8,7 @@ chunks如何被tokenize
 is_english参数的影响
 child_delimiters_pattern的作用
 研究文件：rag/nlp/__init__.py 中的 tokenize_chunks 函数
-📍 任务4: rag_tokenizer 分词器
-代码位置: naive.py:39 研究内容: rag_tokenizer 的实现
-RAGFlow使用的分词算法
-如何支持中英文混合文本
-tokenize vs fine_grained_tokenize的区别
-研究文件：rag/nlp/rag_tokenizer.py
-📍 任务5: 文档元数据构建
-代码位置: naive.py:644-648 研究内容:
 
-doc = {
-    "docnm_kwd": filename,
-    "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
-}
-doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
-文档元数据结构
-文件名如何被处理和向量化
-title_tks vs title_sm_tks的用途
 📍 任务6: 最终返回结果结构
 代码位置: naive.py:951-973 研究内容:
 res列表的最终结构

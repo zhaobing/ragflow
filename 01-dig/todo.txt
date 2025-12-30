@@ -1,7 +1,87 @@
 
 
+PDF解析与向量化研究任务拆分
+📍 任务1: 表格向量化处理
+    代码位置: naive.py:750 研究内容: tokenize_table(tables, doc, is_english)
+    表格数据如何被转换为向量
+    表格的tokenization策略
+    表格与普通文本的向量化差异
+    研究文件：rag/nlp/__init__.py 中的 tokenize_table 函数
+📍 任务2: 文本块合并 - naive_merge
+代码位置: naive.py:946-949 研究内容: naive_merge(sections, chunk_token_num, delimiter)
+sections如何按语义合并成chunks
+chunk_token_num控制策略
+delimiter分割符的作用机制
+研究文件：rag/nlp/__init__.py 中的 naive_merge 函数
+📍 任务3: 分词与向量化 - tokenize_chunks
+代码位置: naive.py:951 研究内容: tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern)
+chunks如何被tokenize
+向量生成的具体实现
+is_english参数的影响
+child_delimiters_pattern的作用
+研究文件：rag/nlp/__init__.py 中的 tokenize_chunks 函数
+📍 任务4: rag_tokenizer 分词器
+代码位置: naive.py:39 研究内容: rag_tokenizer 的实现
+RAGFlow使用的分词算法
+如何支持中英文混合文本
+tokenize vs fine_grained_tokenize的区别
+研究文件：rag/nlp/rag_tokenizer.py
+📍 任务5: 文档元数据构建
+代码位置: naive.py:644-648 研究内容:
+
+doc = {
+    "docnm_kwd": filename,
+    "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
+}
+doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
+文档元数据结构
+文件名如何被处理和向量化
+title_tks vs title_sm_tks的用途
+📍 任务6: 最终返回结果结构
+代码位置: naive.py:951-973 研究内容:
+res列表的最终结构
+每个chunk包含哪些字段
+向量数据如何存储在返回结果中
+attach_media_context的作用（表格/图像上下文附加）
+📍 任务7: 完整流程梳理
+研究内容:
+绘制PDF解析到向量化的完整流程图
+从原始PDF到最终向量化chunks的数据流转
+关键决策点（如何选择chunk大小、分隔符等）
+性能优化点分析
+📍 任务8: 向量存储与检索集成
+研究内容:
+向量化后的数据如何存储到Elasticsearch/Infinity
+向量索引的构建过程
+检索时如何使用这些向量
+研究相关API和服务层代码
+📍 任务9: 高级特性分析
+研究内容:
+带图像的PDF处理：tokenize_chunks_with_images
+表格上下文附加：attach_media_context
+超链接分析：analyze_hyperlink 配置
+嵌入文件处理：extract_embed_file
+📍 任务10: 性能与优化点
+研究内容:
+各阶段的性能瓶颈分析
+chunk_token_num对结果的影响
+不同parser (deepdoc/mineru/docling) 的向量化差异
+内存与速度的权衡策略
 
 
+
+议研究顺序
+按照数据流向，建议按以下顺序研究：
+任务5 → 理解文档元数据构建
+任务1 → 理解表格向量化
+任务2 → 理解文本合并逻辑
+任务4 → 理解分词器基础
+任务3 → 理解核心向量化流程
+任务6 → 理解最终数据结构
+任务7 → 整体流程梳理
+任务8 → 向量存储与检索
+任务9 → 高级特性
+任务10 → 性能优化
 --------------------------------------------------------------------------------
 
 PDF解析研究任务清单

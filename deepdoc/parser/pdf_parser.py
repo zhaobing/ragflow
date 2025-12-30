@@ -657,11 +657,21 @@ class RAGFlowPdfParser:
                     i += 1
                     continue
 
+                # 促合并特征
+                ## 特征1: 上一个框以逗号,分号,冒号,斜杠等结尾
+                ## 特征2: 上一个框个数第2个字符是标点
+                ## 特征2: 下一个框以右引号,句号，分号，等开头
                 concatting_feats = [
                     b["text"].strip()[-1] in ",;:'\"，、‘“；：-",
                     len(b["text"].strip()) > 1 and b["text"].strip()[-2] in ",;:'\"，‘“、；：",
                     b_["text"].strip() and b_["text"].strip()[0] in "。；？！?”）),，、：",
                 ]
+                #阻合并特征
+                # 特征1: 不同layout   
+                # 特征2: 上一个框以句号等结尾
+                # 特征3: 英文句号等
+                # 特征4: Y轴距离过大
+                # 特征5: 跨页时X轴偏移过大
                 # features for not concating
                 feats = [
                     b.get("layoutno", 0) != b_.get("layoutno", 0),
@@ -670,8 +680,14 @@ class RAGFlowPdfParser:
                     b["page_number"] == b_["page_number"] and b_["top"] - b["bottom"] > self.mean_height[b["page_number"] - 1] * 1.5,
                     b["page_number"] < b_["page_number"] and abs(b["x0"] - b_["x0"]) > self.mean_width[b["page_number"] - 1] * 4,
                 ]
+
+                # 空间分离特征
+                # b在b_左侧 b在b_右侧,例如：双栏文档，两栏的文本不应合并
                 # split features
                 detach_feats = [b["x1"] < b_["x0"], b["x0"] > b_["x1"]]
+
+
+                # 合并决策
                 if (any(feats) and not any(concatting_feats)) or any(detach_feats):
                     logging.debug(
                         "{} {} {} {}".format(
@@ -691,10 +707,14 @@ class RAGFlowPdfParser:
                 bxs.pop(i + 1)
 
             merged_boxes.extend(bxs)
-
+            
+        # 优先按page_number排序：确保从第1页到最后1页
+        # 次要按col_id排序：确保从左列到右列
+        # 最后按top排序：确保从上到下
         self.boxes = sorted(merged_boxes, key=lambda x: (x["page_number"], x.get("col_id", 0), x["top"]))
 
     def _final_reading_order_merge(self, zoomin=3):
+        # 最终阅读顺序重排
         if not self.boxes:
             return
 

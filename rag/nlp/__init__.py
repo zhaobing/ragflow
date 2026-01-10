@@ -274,21 +274,50 @@ def tokenize(d, txt, eng):
 
 
 def tokenize_chunks(chunks, doc, eng, pdf_parser=None, child_delimiters_pattern=None):
+    """
+    将分割好的文本块进行切片处理，并附加位置信息和元数据，最终生成符合搜索引擎索引要求的文档对象
+    
+    文档元数据复制: 为每个切块创建独立的文档对象，继承文档级元数据
+    
+    位置信息提取: 从PDF解析器中提取切块的位置坐标和页码信息
+    
+    图像裁剪: 根据文本切块裁剪对应的PDF页面图像（如果可用）
+    
+    二级切分处理: 根据子分隔符对切块进行进一步细分（可选）
+    
+    分词处理: 对文本进行粗粒度和细粒度分词，生成检索所需的token序列
+    
+    :param chunks: Description
+    :param doc: Description
+    :param eng: Description
+    :param pdf_parser: Description
+    :param child_delimiters_pattern: Description
+    """
     res = []
     # wrap up as es documents
     for ii, ck in enumerate(chunks):
+        # 过滤掉空白或只包含空格的无效文本块
         if len(ck.strip()) == 0:
             continue
         logging.debug("-- {}".format(ck))
+        
+        # 文档元数据复制,每个切块需要独立的文档对象,保证互不影响
         d = copy.deepcopy(doc)
+
         if pdf_parser:
             try:
+                # 裁剪文本块对应的图像
                 d["image"], poss = pdf_parser.crop(ck, need_position=True)
+                 # 添加位置信息
                 add_positions(d, poss)
+                # 移除文本中的位置标签
                 ck = pdf_parser.remove_tag(ck)
             except NotImplementedError:
                 pass
         else:
+            # 使用切块序号生成虚拟位置
+            # 格式: [ii, ii, ii, ii, ii]
+            # 适用场景：TXT 文件处理,Markdown 文件,其他非PDF格式
             add_positions(d, [[ii]*5])
 
         if child_delimiters_pattern:

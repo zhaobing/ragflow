@@ -952,12 +952,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli))
         else:
             # digzhaob
-            
+            # 合并文本并切块
             chunks = naive_merge(
                 sections, int(parser_config.get(
                     "chunk_token_num", 128)), parser_config.get(
                     "delimiter", "\n!?。；！？"))
-
+            # 切块向量化
             res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli))
 
     if urls and parser_config.get("analyze_hyperlink", False) and is_root:

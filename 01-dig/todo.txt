@@ -2,18 +2,20 @@
 
 wenti-问题:
 
+tiktoken编码器进行编码
+在chunk中，重叠百分比设置多少合适，高低有什么影响？如何智能的判断
+
+总结在整个chunk与分词流程中，针对边界情况的处理。
+输出到:/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/01-dig/分析结果01/04-分词器与切块/415-chunk与分词流程边界处理总结.md
+
+
+
 
 --------------------------------------------------------------------------------
 
 PDF解析与向量化研究任务拆分
 
-📍 任务3: 分词与向量化 - tokenize_chunks
-代码位置: naive.py:951 研究内容: tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern)
-chunks如何被tokenize
-向量生成的具体实现
-is_english参数的影响
-child_delimiters_pattern的作用
-研究文件：rag/nlp/__init__.py 中的 tokenize_chunks 函数
+
 
 📍 任务6: 最终返回结果结构
 代码位置: naive.py:951-973 研究内容:
@@ -21,6 +23,9 @@ res列表的最终结构
 每个chunk包含哪些字段
 向量数据如何存储在返回结果中
 attach_media_context的作用（表格/图像上下文附加）
+
+
+
 📍 任务7: 完整流程梳理
 研究内容:
 绘制PDF解析到向量化的完整流程图
@@ -51,10 +56,11 @@ chunk_token_num对结果的影响
 议研究顺序
 按照数据流向，建议按以下顺序研究：
 任务5 → 理解文档元数据构建 done
-任务1 → 理解表格向量化  复
-任务2 → 理解文本合并逻辑  复 
-任务4 → 理解分词器基础 run
-任务3 → 理解核心向量化流程 wait
+任务1 → 理解表格向量化  复 done
+任务2 → 理解文本合并逻辑  复 406 done
+任务4 → 理解分词器基础 done
+任务3 → 理解核心向量化流程 done
+
 任务6 → 理解最终数据结构 wait
 任务7 → 整体流程梳理 wait
 任务8 → 向量存储与检索 wait
@@ -95,6 +101,9 @@ PDF解析研究任务清单
 A-Level:
 ocr过程总结，包含多次坐标系的转换
 哪里对跨页文本块进行了标记？测试时发现没有对跨页有特殊标记
+chunk是否有基于语义的chunk方法
+如何评价chunk效果？如何评价召回效果？有哪些体系化的评估方案与标准指标
+
 
 B-Level:
 各个模型的总结，如何训练的？原始的开源出处是什么？

@@ -856,13 +856,13 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
     
     自定义分隔符: 支持用户自定义的分隔符进行强制分割
     
-    短文本过滤: 过滤掉token数<8的过短内容 
+        短文本过滤: 过滤掉token数<8的过短内容 
     
     :param sections: Description
     :type sections: str | list
     :param chunk_token_num: Description
     :param delimiter: Description
-    :param overlapped_percent: Description
+    :param overlapped_percent:  重叠百分比（0-90）
     """
     from deepdoc.parser.pdf_parser import RAGFlowPdfParser
     # 输入标准化
@@ -872,26 +872,38 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
         sections = [sections]
     if isinstance(sections[0], str):
         sections = [(s, "") for s in sections]
+
+    #切分后的文本列表   
     cks = [""]
+    #切分后文本列表对应的token数量
     tk_nums = [0]
 
     def add_chunk(t, pos):
         nonlocal cks, tk_nums, delimiter
+        # 获取当前文本的token数量（使用tiktoken编码器)
         tnum = num_tokens_from_string(t)
+
         if not pos:
             pos = ""
         if tnum < 8:
             pos = ""
         # Ensure that the length of the merged chunk does not exceed chunk_token_num
+        # 最后1个令牌桶的数量 > 令牌上限 * (非重叠百分比) 
         if cks[-1] == "" or tk_nums[-1] > chunk_token_num * (100 - overlapped_percent)/100.:
-            if cks:
+            if cks:# 创建新chunk,当前chunk > 90%非重叠tokens → 创建新chunk
+                # 提取上一个chunk的内容,移除位置标签，获取纯文本
                 overlapped = RAGFlowPdfParser.remove_tag(cks[-1])
+                # 计算重叠部分,从上一个chunk的末尾提取指定百分比的内容
+                # 从上一个chunk末尾提取指定百分比的内容，作为新chunk的开头,然后连接当前文本chunk
                 t = overlapped[int(len(overlapped)*(100-overlapped_percent)/100.):] + t
+                
+            #添加位置标签    
             if t.find(pos) < 0:
                 t += pos
             cks.append(t)
             tk_nums.append(tnum)
-        else:
+        else:# 追加到当前chunk
+            # 将新文本追加到当前chunk末尾,累加token数量
             if cks[-1].find(pos) < 0:
                 t += pos
             cks[-1] += t

@@ -229,6 +229,7 @@ async def build_chunks(task, progress_callback):
                                               (int(settings.DOC_MAXIMUM_SIZE / 1024 / 1024)))
         return []
 
+    # digzhaob
     chunker = FACTORY[task["parser_id"].lower()]
     try:
         st = timer()
@@ -993,6 +994,8 @@ async def do_handle_task(task):
     else:
         # Standard chunking methods
         start_ts = timer()
+
+        #digzhaob-chunk-切块
         chunks = await build_chunks(task, progress_callback)
         logging.info("Build document {}: {:.2f}s".format(task_document_name, timer() - start_ts))
         if not chunks:
@@ -1000,6 +1003,8 @@ async def do_handle_task(task):
             return
         progress_callback(msg="Generate {} chunks".format(len(chunks)))
         start_ts = timer()
+
+        #digzhaob-embedding向量化
         try:
             token_count, vector_size = await embedding(chunks, embedding_model, task_parser_config, progress_callback)
         except Exception as e:
@@ -1016,6 +1021,9 @@ async def do_handle_task(task):
 
     chunk_count = len(set([chunk["id"] for chunk in chunks]))
     start_ts = timer()
+
+
+    #dig-zhaob-save2es-存储到es
     e = await insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_callback)
     if not e:
         return

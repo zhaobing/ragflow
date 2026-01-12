@@ -15,35 +15,32 @@ tiktoken编码器进行编码
 
 PDF解析与向量化研究任务拆分
 
-
-
-📍 任务6: 最终返回结果结构
-代码位置: naive.py:951-973 研究内容:
-res列表的最终结构
-每个chunk包含哪些字段
-向量数据如何存储在返回结果中
-attach_media_context的作用（表格/图像上下文附加）
-
-
-
 📍 任务7: 完整流程梳理
 研究内容:
 绘制PDF解析到向量化的完整流程图
 从原始PDF到最终向量化chunks的数据流转
 关键决策点（如何选择chunk大小、分隔符等）
 性能优化点分析
+
+
 📍 任务8: 向量存储与检索集成
 研究内容:
 向量化后的数据如何存储到Elasticsearch/Infinity
 向量索引的构建过程
 检索时如何使用这些向量
 研究相关API和服务层代码
+
+
+
 📍 任务9: 高级特性分析
 研究内容:
 带图像的PDF处理：tokenize_chunks_with_images
 表格上下文附加：attach_media_context
 超链接分析：analyze_hyperlink 配置
 嵌入文件处理：extract_embed_file
+
+
+
 📍 任务10: 性能与优化点
 研究内容:
 各阶段的性能瓶颈分析
@@ -61,8 +58,8 @@ chunk_token_num对结果的影响
 任务4 → 理解分词器基础 done
 任务3 → 理解核心向量化流程 done
 
-任务6 → 理解最终数据结构 wait
-任务7 → 整体流程梳理 wait
+任务6 → 理解最终数据结构 done
+任务7 → 整体流程梳理 run
 任务8 → 向量存储与检索 wait
 任务9 → 高级特性 wait
 任务10 → 性能优化 wait

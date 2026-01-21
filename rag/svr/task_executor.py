@@ -475,20 +475,31 @@ def init_kb(row, vector_size: int):
 async def embedding(docs, mdl, parser_config=None, callback=None):
     if parser_config is None:
         parser_config = {}
+
+    #标题与内容
     tts, cnts = [], []
     for d in docs:
+        # 标题提取
         tts.append(d.get("docnm_kwd", "Title"))
+        # 内容提取 
+        # 优先级1: question_kwd - 如果有自动生成的问题;优先级2: content_with_weight - 原始内容
         c = "\n".join(d.get("question_kwd", []))
         if not c:
             c = d["content_with_weight"]
+
+
+        # HTML标签清理
         c = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", c)
         if not c:
             c = "None"
         cnts.append(c)
 
+
+    # 标题向量化,只编码第一个标题:
     tk_count = 0
     if len(tts) == len(cnts):
         vts, c = await asyncio.to_thread(mdl.encode, tts[0:1])
+        # 广播复制:
         tts = np.tile(vts[0], (len(cnts), 1))
         tk_count += c
 
@@ -497,10 +508,13 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         nonlocal mdl
         return mdl.encode([truncate(c, mdl.max_length-10) for c in txts])
 
+    # 批量处理:
     cnts_ = np.array([])
     for i in range(0, len(cnts), settings.EMBEDDING_BATCH_SIZE):
         async with embed_limiter:
             vts, c = await asyncio.to_thread(batch_encode, cnts[i : i + settings.EMBEDDING_BATCH_SIZE])
+
+        # 第一批直接赋值
         if len(cnts_) == 0:
             cnts_ = vts
         else:
@@ -508,6 +522,8 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         tk_count += c
         callback(prog=0.7 + 0.2 * (i + 1) / len(cnts), msg="")
     cnts = cnts_
+
+    #向量融合,标题与内容向量融合,融合后的向量兼具全局和局部信息
     filename_embd_weight = parser_config.get("filename_embd_weight", 0.1) # due to the db support none value
     if not filename_embd_weight:
         filename_embd_weight = 0.1
@@ -517,6 +533,7 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
     else:
         vects = cnts
 
+    # 结果写入,向量化后的结果挂载到doc上
     assert len(vects) == len(docs)
     vector_size = 0
     for i, d in enumerate(docs):
@@ -768,6 +785,7 @@ async def delete_image(kb_id, chunk_id):
 
 
 async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_callback):
+    # 提取Mother Chunks
     mothers = []
     mother_ids = set([])
     for ck in chunks:
@@ -789,6 +807,7 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
                 del mom_ck[fld]
         mothers.append(mom_ck)
 
+    # 批量插入Mother Chunks
     for b in range(0, len(mothers), settings.DOC_BULK_SIZE):
         await asyncio.to_thread(settings.docStoreConn.insert,mothers[b:b + settings.DOC_BULK_SIZE],search.index_name(task_tenant_id),task_dataset_id,)
         task_canceled = has_canceled(task_id)
@@ -796,23 +815,31 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
             progress_callback(-1, msg="Task has been canceled.")
             return False
 
+    #批量插入普通Chunks
     for b in range(0, len(chunks), settings.DOC_BULK_SIZE):
+        # 批量插入chunks
         doc_store_result = await asyncio.to_thread(settings.docStoreConn.insert,chunks[b:b + settings.DOC_BULK_SIZE],search.index_name(task_tenant_id),task_dataset_id,)
         task_canceled = has_canceled(task_id)
+        # 检查任务取消
         if task_canceled:
             progress_callback(-1, msg="Task has been canceled.")
             return False
+        # 更新进度    
         if b % 128 == 0:
             progress_callback(prog=0.8 + 0.1 * (b + 1) / len(chunks), msg="")
+        # 检查插入结果    
         if doc_store_result:
             error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
             progress_callback(-1, msg=error_message)
             raise Exception(error_message)
+            
+        # 更新任务chunk_ids    
         chunk_ids = [chunk["id"] for chunk in chunks[:b + settings.DOC_BULK_SIZE]]
         chunk_ids_str = " ".join(chunk_ids)
         try:
             TaskService.update_chunk_ids(task_id, chunk_ids_str)
         except DoesNotExist:
+            
             logging.warning(f"do_handle_task update_chunk_ids failed since task {task_id} is unknown.")
             doc_store_result = await asyncio.to_thread(settings.docStoreConn.delete,{"id": chunk_ids},search.index_name(task_tenant_id),task_dataset_id,)
             tasks = []

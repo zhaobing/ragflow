@@ -292,24 +292,56 @@ class ESConnection(DocStoreConnection):
         # Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
         operations = []
         for d in documents:
+            # 防止用户直接使用_id字段（Elasticsearch保留字段）,确保每个文档都有id字段（用于生成_id）
             assert "_id" not in d
             assert "id" in d
+            
             d_copy = copy.deepcopy(d)
             d_copy["kb_id"] = knowledgebaseId
+
+            '''
+            ID字段映射 document["id"]  →  Elasticsearch["_id"]
+            Elasticsearch元字段结构:
+            {
+              "index": {
+                "_index": "rag_table_001",
+                "_id": "chunk_123"
+              }
+            }
+
+            最终格式
+            [
+                {"index": {"_index": "rag_table", "_id": "chunk_1"}},
+                {"kb_id": "kb_123", "content": "content 1"},
+
+                {"index": {"_index": "rag_table", "_id": "chunk_2"}},
+                {"kb_id": "kb_123", "content": "content 2"},
+
+                ...
+            ]
+            '''
             meta_id = d_copy.pop("id", "")
+            # 操作行
             operations.append(
                 {"index": {"_index": indexName, "_id": meta_id}})
+            # 数据行    
             operations.append(d_copy)
 
         res = []
-        for _ in range(ATTEMPT_TIME):
+        for _ in range(ATTEMPT_TIME): #ATTEMPT_TIME,Represents the number of retries;代表重试次数
+
             try:
                 res = []
+
+                #operations contains operation and data; 
+                # refresh=False means not refreshing immediately to improve performance
+                # refresh=False代表不立即刷新从而提高性能
                 r = self.es.bulk(index=(indexName), operations=operations,
                                  refresh=False, timeout="60s")
                 if re.search(r"False", str(r["errors"]), re.IGNORECASE):
                     return res
 
+                # 错误收集逻辑
                 for item in r["items"]:
                     for action in ["create", "delete", "index", "update"]:
                         if action in item and "error" in item[action]:

@@ -1,7 +1,21 @@
 + run-关注
 
 
+quart 模块
 
+文件:/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/api/apps/conversation_app.py 中
+completion()方法，总结该方法的业务逻辑，执行流程，以及相关技术点
+
+加载对话Dialog ConversationService.get_by_id是如何完成的
+
+
+初始化reference数组
+
+调用async_chat生成答案
+
+结构化答案structure_answer
+
+更新会话历史
 
 
 
@@ -544,11 +558,18 @@ chunk_token_num对结果的影响
 --------------------------------------------------------------------------------
 
 A-Level:
+
+
+A-Later:
 ocr过程总结，包含多次坐标系的转换
 哪里对跨页文本块进行了标记？测试时发现没有对跨页有特殊标记
 chunk是否有基于语义的chunk方法
 如何评价chunk效果？如何评价召回效果？有哪些体系化的评估方案与标准指标
-多路找回的实现方案
+多路召回的实现方案,进一步探索
+如何评价召回效果？
+同一份文档，多个版本号如何处理 ?
+同一份文档插入多次如何处理 ？
+
 
 B-Level:
 各个模型的总结，如何训练的？原始的开源出处是什么？

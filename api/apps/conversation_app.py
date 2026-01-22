@@ -169,7 +169,29 @@ async def list_conversation():
 @login_required
 @validate_request("conversation_id", "messages")
 async def completion():
+
+    # 请求格式
+    '''
+        {
+            "conversation_id": "conv_123",      # 必填：会话ID
+            "messages": [                       # 必填：消息列表
+                {"role": "user", "content": "问题", "id": "msg_1"},
+                {"role": "assistant", "content": "答案", "id": "msg_1"},
+                {"role": "user", "content": "追问", "id": "msg_2"}
+            ],
+            "llm_id": "model_name",             # 可选：指定LLM模型
+            "temperature": 0.7,                 # 可选：温度参数
+            "top_p": 0.9,                        # 可选：top_p采样
+            "max_tokens": 2000,                 # 可选：最大token数
+            "stream": true                       # 可选：是否流式输出（默认true）
+        }    
+    '''
     req = await get_request_json()
+
+
+    # Filter out the first message among system messages and assistant messages (the first assistant message is a greeting message and can be ignored)
+    # 过滤系统消息与助手消息的第一条(第1条助手消息是打招呼消息，可以忽略)
+
     msg = []
     for m in req["messages"]:
         if m["role"] == "system":
@@ -177,10 +199,14 @@ async def completion():
         if m["role"] == "assistant" and not msg:
             continue
         msg.append(m)
+
+
     message_id = msg[-1].get("id")
     chat_model_id = req.get("llm_id", "")
     req.pop("llm_id", None)
 
+    # LLM Configuration Extraction
+    # LLM配置提取
     chat_model_config = {}
     for model_config in [
         "temperature",
@@ -194,6 +220,8 @@ async def completion():
             chat_model_config[model_config] = config
 
     try:
+        # load session
+        # 加载会话
         e, conv = ConversationService.get_by_id(req["conversation_id"])
         if not e:
             return get_data_error_result(message="Conversation not found!")
@@ -204,11 +232,23 @@ async def completion():
         del req["conversation_id"]
         del req["messages"]
 
+
+
+        #处理引用
+        '''
+        reference结构:
+        conv.reference = [
+                {"chunks": [...], "doc_aggs": [...]},  # 第1轮回答的引用
+                {"chunks": [...], "doc_aggs": [...]},  # 第2轮回答的引用
+                {"chunks": [], "doc_aggs": []},         # 当前回答的引用（待填充）
+            ]
+        '''
         if not conv.reference:
             conv.reference = []
         conv.reference = [r for r in conv.reference if r]
         conv.reference.append({"chunks": [], "doc_aggs": []})
 
+        # 模型切换验证
         if chat_model_id:
             if not TenantLLMService.get_api_key(tenant_id=dia.tenant_id, model_name=chat_model_id):
                 req.pop("chat_model_id", None)
@@ -218,6 +258,7 @@ async def completion():
             dia.llm_setting = chat_model_config
 
         is_embedded = bool(chat_model_id)
+        # 流式响应
         async def stream():
             nonlocal dia, msg, req, conv
             try:
@@ -231,6 +272,7 @@ async def completion():
                 yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
             yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
+        # 流式响应
         if req.get("stream", True):
             resp = Response(stream(), mimetype="text/event-stream")
             resp.headers.add_header("Cache-control", "no-cache")
@@ -239,7 +281,7 @@ async def completion():
             resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
             return resp
 
-        else:
+        else: #非流式响应
             answer = None
             async for ans in async_chat(dia, msg, **req):
                 answer = structure_answer(conv, ans, message_id, conv.id)

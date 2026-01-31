@@ -280,6 +280,8 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
 
 async def async_chat(dialog, messages, stream=True, **kwargs):
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
+    
+    #无知识库纯对话模式
     if not dialog.kb_ids and not dialog.prompt_config.get("tavily_api_key"):
         async for ans in async_chat_solo(dialog, messages, stream):
             yield ans
@@ -287,15 +289,18 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
     chat_start_ts = timer()
 
+    # 获取LLM模型配置
     if TenantLLMService.llm_id2llm_type(dialog.llm_id) == "image2text":
         llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
         llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
 
+    # 获取最大token数
     max_tokens = llm_model_config.get("max_tokens", 8192)
 
     check_llm_ts = timer()
 
+    # 初始化Langfuse Tracer
     langfuse_tracer = None
     trace_context = {}
     langfuse_keys = TenantLangfuseService.filter_by_tenant(tenant_id=dialog.tenant_id)
@@ -313,16 +318,23 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         chat_mdl.bind_tools(toolcall_session, tools)
     bind_models_ts = timer()
 
+    # 提取最近3轮用户问题
     retriever = settings.retriever
     questions = [m["content"] for m in messages if m["role"] == "user"][-3:]
     attachments = kwargs["doc_ids"].split(",") if "doc_ids" in kwargs else []
     attachments_= ""
+
+    # 提取附件
     if "doc_ids" in messages[-1]:
         attachments = messages[-1]["doc_ids"]
     if "files" in messages[-1]:
         attachments_ = "\n\n".join(FileService.get_files(messages[-1]["files"]))
 
     prompt_config = dialog.prompt_config
+
+    # SQL检索模式优先,知识库有字段映射（field_map不为空）,通常用于结构化数据（如简历解析
+    # 使用LLM生成SQL（Text2SQL）,
+    # 适用场景：结构化文档检索
     field_map = KnowledgebaseService.get_field_map(dialog.kb_ids)
     # try to use sql if field mapping is good to go
     if field_map:
@@ -340,14 +352,17 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         if p["key"] not in kwargs:
             prompt_config["system"] = prompt_config["system"].replace("{%s}" % p["key"], " ")
 
+    # 多轮对话问题精炼,如果开启多轮次对话精炼，则精炼对话;如果没有开启，则只保留最后一个问题
     if len(questions) > 1 and prompt_config.get("refine_multiturn"):
         questions = [await full_question(dialog.tenant_id, dialog.llm_id, messages)]
     else:
         questions = questions[-1:]
 
+    # 跨语言处理
     if prompt_config.get("cross_languages"):
         questions = [await cross_languages(dialog.tenant_id, dialog.llm_id, questions[0], prompt_config["cross_languages"])]
 
+    # 元数据过滤
     if dialog.meta_data_filter:
         metas = DocumentService.get_meta_by_kbs(dialog.kb_ids)
         attachments = await apply_meta_data_filter(
@@ -358,6 +373,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             attachments,
         )
 
+    # 关键词提取
     if prompt_config.get("keyword", False):
         questions[-1] += await keyword_extraction(chat_mdl, questions[-1])
 
@@ -371,6 +387,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         tenant_ids = list(set([kb.tenant_id for kb in kbs]))
         knowledges = []
         if prompt_config.get("reasoning", False):
+            # 深度研究模式（Agentic RAG）
             reasoner = DeepResearcher(
                 chat_mdl,
                 prompt_config,
@@ -394,6 +411,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 elif stream:
                     yield think
         else:
+            # 标准检索模式,向量+全文混合检索
             if embd_mdl:
                 kbinfos = retriever.retrieval(
                     " ".join(questions),
@@ -410,25 +428,55 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     rerank_mdl=rerank_mdl,
                     rank_feature=label_question(" ".join(questions), kbs),
                 )
+                
+                # TOC增强检索
                 if prompt_config.get("toc_enhance"):
                     cks = retriever.retrieval_by_toc(" ".join(questions), kbinfos["chunks"], tenant_ids, chat_mdl, dialog.top_n)
                     if cks:
                         kbinfos["chunks"] = cks
+                        
+                # 子chunk检索        
                 kbinfos["chunks"] = retriever.retrieval_by_children(kbinfos["chunks"], tenant_ids)
+                
+            # Tavily搜索    
             if prompt_config.get("tavily_api_key"):
                 tav = Tavily(prompt_config["tavily_api_key"])
                 tav_res = tav.retrieve_chunks(" ".join(questions))
                 kbinfos["chunks"].extend(tav_res["chunks"])
                 kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
+                
+            # 知识图谱检索    
             if prompt_config.get("use_kg"):
                 ck = settings.kg_retriever.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl,
                                                        LLMBundle(dialog.tenant_id, LLMType.CHAT))
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
 
+            # 知识组装
             knowledges = kb_prompt(kbinfos, max_tokens)
 
     logging.debug("{}->{}".format(" ".join(questions), "\n->".join(knowledges)))
+
+
+    # 阶段5: 提示词组装
+    '''
+    提示词结构
+        system_prompt = """
+        {system_prompt_template}
+
+        {knowledge}
+
+        {attachments}
+        """
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": "第1轮问题"},
+            {"role": "assistant", "content": "第1轮答案"},
+            {"role": "user", "content": "当前问题"}
+        ]
+    '''
+
 
     retrieval_ts = timer()
     if not knowledges and prompt_config.get("empty_response"):
@@ -438,18 +486,29 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         yield {"answer": prompt_config["empty_response"], "reference": kbinfos}
         return
 
+    # 组装知识内容
     kwargs["knowledge"] = "\n------\n" + "\n\n------\n\n".join(knowledges)
     gen_conf = dialog.llm_setting
 
+    # 组装系统提示词
     msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs)+attachments_}]
+
+    # 组装引用提示词
     prompt4citation = ""
     if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
         prompt4citation = citation_prompt()
+        
+    # 组装历史消息    
     msg.extend([{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if m["role"] != "system"])
+    
+    # Token数量控制
     used_token_count, msg = message_fit_in(msg, int(max_tokens * 0.95))
     assert len(msg) >= 2, f"message_fit_in has bug: {msg}"
+
+    # 提取最终提示词
     prompt = msg[0]["content"]
 
+    # 动态调整max_tokens
     if "max_tokens" in gen_conf:
         gen_conf["max_tokens"] = min(gen_conf["max_tokens"], max_tokens - used_token_count)
 
@@ -457,15 +516,19 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         nonlocal embd_mdl, prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts, questions, langfuse_tracer
 
         refs = []
+        # 1. 提取思维链
         ans = answer.split("</think>")
         think = ""
         if len(ans) == 2:
             think = ans[0] + "</think>"
             answer = ans[1]
-
+            
+        # 2. 自动插入引用
         if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
             idx = set([])
             if embd_mdl and not re.search(r"\[ID:([0-9]+)\]", answer):
+                
+                # 自动插入
                 answer, idx = retriever.insert_citations(
                     answer,
                     [ck["content_ltks"] for ck in kbinfos["chunks"]],
@@ -475,13 +538,17 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     vtweight=dialog.vector_similarity_weight,
                 )
             else:
+                
+                # 提取手动引用
                 for match in re.finditer(r"\[ID:([0-9]+)\]", answer):
                     i = int(match.group(1))
                     if i < len(kbinfos["chunks"]):
                         idx.add(i)
 
+             # 3. 修复引用格式
             answer, idx = repair_bad_citation_formats(answer, kbinfos, idx)
 
+            # 4. 聚合文档来源
             idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
             recall_docs = [d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
             if not recall_docs:
@@ -531,27 +598,41 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
         return {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
 
+    #阶段6: LLM答案生成
+
+    # 初始化Langfuse生成追踪
     if langfuse_tracer:
         langfuse_generation = langfuse_tracer.start_generation(
             trace_context=trace_context, name="chat", model=llm_model_config["llm_name"],
             input={"prompt": prompt, "prompt4citation": prompt4citation, "messages": msg}
         )
 
+    # 流式输出
     if stream:
         last_ans = ""
         answer = ""
         async for ans in chat_mdl.async_chat_streamly(prompt + prompt4citation, msg[1:], gen_conf):
+            
+            # 处理思维链
             if thought:
                 ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
             answer = ans
+            
+            # 提取增量
             delta_ans = ans[len(last_ans):]
             if num_tokens_from_string(delta_ans) < 16:
                 continue
             last_ans = answer
+            
+            # TTS生成音频
             yield {"answer": thought + answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
+
+        # 发送剩余部分
         delta_ans = answer[len(last_ans):]
         if delta_ans:
             yield {"answer": thought + answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
+            
+        # 装饰答案（引用标注+时间统计）    
         yield decorate_answer(thought + answer)
     else:
         answer = await chat_mdl.async_chat(prompt + prompt4citation, msg[1:], gen_conf)

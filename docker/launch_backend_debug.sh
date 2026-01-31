@@ -97,8 +97,8 @@ task_exe(){
 run_server(){
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
-        echo "Starting ragflow_server.py (Attempt $((retry_count+1)))"
-        $PY api/ragflow_server.py
+        echo "Starting ragflow_server.py with debugpy on port 5678 (Attempt $((retry_count+1)))"
+        $PY -m debugpy --listen 5678 --wait-for-client api/ragflow_server.py
         EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
             echo "ragflow_server.py exited successfully."

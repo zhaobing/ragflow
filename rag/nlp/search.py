@@ -51,13 +51,21 @@ class Dealer:
         group_docs: list[list] | None = None
 
     def get_vector(self, txt, emb_mdl, topk=10, similarity=0.1):
+
+        # 使用嵌入模型编码查询
         qv, _ = emb_mdl.encode_queries(txt)
         shape = np.array(qv).shape
         if len(shape) > 1:
             raise Exception(
                 f"Dealer.get_vector returned array's shape {shape} doesn't match expectation(exact one dimension).")
+                
+        # 转换为浮点数组
         embedding_data = [get_float(v) for v in qv]
+        
+        # 构建向量列名 (如 q_1024_vec)
         vector_column_name = f"q_{len(embedding_data)}_vec"
+
+        # 返回密集向量匹配表达式(匹配方式使用余弦相似度)
         return MatchDenseExpr(vector_column_name, embedding_data, 'float', 'cosine', topk, {"similarity": similarity})
 
     def get_filters(self, req):
@@ -80,6 +88,7 @@ class Dealer:
         if highlight is None:
             highlight = False
 
+        # 1. 构建过滤条件
         filters = self.get_filters(req)
         orderBy = OrderByExpr()
 
@@ -88,6 +97,7 @@ class Dealer:
         ps = int(req.get("size", topk))
         offset, limit = pg * ps, ps
 
+        # 2. 获取字段列表
         src = req.get("fields",
                       ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd", "position_int",
                        "doc_id", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd",
@@ -95,8 +105,11 @@ class Dealer:
                        "available_int", "content_with_weight", "mom_id", PAGERANK_FLD, TAG_FLD])
         kwds = set([])
 
+        # 3. 问题分析
         qst = req.get("question", "")
         q_vec = []
+
+        #无问题检索，浏览文档内容，按顺序查看chunk，不需要语义匹配的场景
         if not qst:
             if req.get("sort"):
                 orderBy.asc("page_num_int")
@@ -111,40 +124,55 @@ class Dealer:
                 highlightFields = []
             elif isinstance(highlight, list):
                 highlightFields = highlight
+            
+                
+            #分词处理: 对问题进行分词
+            #关键词提取: 提取重要关键词
+            #构建查询表达式: 生成全文检索的 matchText 表达式
             matchText, keywords = self.qryr.question(qst, min_match=0.3)
+
+            # 当没有嵌入模型时，仅使用全文检索;只使用BM25等文本相似度算法 
             if emb_mdl is None:
                 matchExprs = [matchText]
                 res = self.dataStore.search(src, highlightFields, filters, matchExprs, orderBy, offset, limit,
                                             idx_names, kb_ids, rank_feature=rank_feature)
                 total = self.dataStore.get_total(res)
                 logging.debug("Dealer.search TOTAL: {}".format(total))
-            else:
+            else: #4. 嵌入模型处理;混合检索分支,向量+全文的混合检索
+
+                # 获取查询向量
                 matchDense = self.get_vector(qst, emb_mdl, topk, req.get("similarity", 0.1))
                 q_vec = matchDense.embedding_data
                 if not settings.DOC_ENGINE_INFINITY:
                     src.append(f"q_{len(q_vec)}_vec")
 
+                # 构建融合表达式;向量检索主导（95%），重视语义相似;全文检索辅助（5%），提升关键词匹配
                 fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.05,0.95"})
                 matchExprs = [matchText, matchDense, fusionExpr]
 
+                # 执行混合检索
                 res = self.dataStore.search(src, highlightFields, filters, matchExprs, orderBy, offset, limit,
                                             idx_names, kb_ids, rank_feature=rank_feature)
                 total = self.dataStore.get_total(res)
                 logging.debug("Dealer.search TOTAL: {}".format(total))
 
-                # If result is empty, try again with lower min_match
+                # 结果为空重试
                 if total == 0:
+                    # 如果有文档过滤，去掉检索条件直接返回
                     if filters.get("doc_id"):
                         res = self.dataStore.search(src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
                         total = self.dataStore.get_total(res)
                     else:
+                        # 降低匹配要求重试
                         matchText, _ = self.qryr.question(qst, min_match=0.1)
+                        #similarity从0.1升到0.17是放宽限制（因为是阈值，越低越严格）
                         matchDense.extra_options["similarity"] = 0.17
                         res = self.dataStore.search(src, highlightFields, filters, [matchText, matchDense, fusionExpr],
                                                     orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
                         total = self.dataStore.get_total(res)
                     logging.debug("Dealer.search 2 TOTAL: {}".format(total))
 
+            # 关键词提取;提取查询关键词用于高亮;细粒度分词增加匹配范围
             for k in keywords:
                 kwds.add(k)
                 for kk in rag_tokenizer.fine_grained_tokenize(k).split():
@@ -154,6 +182,7 @@ class Dealer:
                         continue
                     kwds.add(kk)
 
+        # 组装并返回结果构建
         logging.debug(f"TOTAL: {total}")
         ids = self.dataStore.get_chunk_ids(res)
         keywords = list(kwds)
@@ -379,6 +408,10 @@ class Dealer:
             return ranks
 
         # Ensure RERANK_LIMIT is multiple of page_size
+        # 构建搜索请求
+        # kb_ids:知识库ID
+        # doc_ids:文档ID
+        # 
         RERANK_LIMIT = math.ceil(64 / page_size) * page_size if page_size > 1 else 1
         req = {
             "kb_ids": kb_ids,
@@ -395,9 +428,12 @@ class Dealer:
         if isinstance(tenant_ids, str):
             tenant_ids = tenant_ids.split(",")
 
+        # 2. 调用search方法进行初始检索
         sres = self.search(req, [index_name(tid) for tid in tenant_ids], kb_ids, embd_mdl, highlight, rank_feature=rank_feature)
 
+        # 3. 重排序
         if rerank_mdl and sres.total > 0:
+            # 使用模型重排序
             sim, tsim, vsim = self.rerank_by_model(
                 rerank_mdl,
                 sres,
@@ -415,6 +451,7 @@ class Dealer:
                 vsim = sim
             else:
                 # ElasticSearch doesn't normalize each way score before fusion.
+                # 使用公式重排序
                 sim, tsim, vsim = self.rerank(
                     sres,
                     question,
@@ -423,6 +460,7 @@ class Dealer:
                     rank_feature=rank_feature,
                 )
 
+        # 4. 相似度过滤和排序
         sim_np = np.array(sim, dtype=np.float64)
         if sim_np.size == 0:
             ranks["doc_aggs"] = []
@@ -437,13 +475,15 @@ class Dealer:
         if filtered_count == 0:
             ranks["doc_aggs"] = []
             return ranks
-
+            
+        # 5. 分页处理
         max_pages = max(RERANK_LIMIT // max(page_size, 1), 1)
         page_index = (page - 1) % max_pages
         begin = page_index * page_size
         end = begin + page_size
         page_idx = valid_idx[begin:end]
 
+        # 6. 构建返回结果?
         dim = len(sres.query_vector)
         vector_column = f"q_{dim}_vec"
         zero_vector = [0.0] * dim
@@ -479,6 +519,7 @@ class Dealer:
                     d["highlight"] = d["content_with_weight"]
             ranks["chunks"].append(d)
 
+        # 7. 文档聚合
         if aggs:
             for i in valid_idx:
                 id = sres.ids[i]

@@ -59,6 +59,16 @@ def chunks_format(reference):
 
 
 def message_fit_in(msg, max_length=4000):
+    """
+    确保消息历史不超过max_length限制
+
+    逻辑:
+    1. 计算当前token总数
+    2. 如果小于限制，直接返回
+    3. 优先保留system消息
+    4. 如果还不够，截断最后一条消息
+    """
+    
     def count():
         nonlocal msg
         tks_cnts = []
@@ -73,6 +83,7 @@ def message_fit_in(msg, max_length=4000):
     if c < max_length:
         return c, msg
 
+    # 只保留system消息和最后一条消息
     msg_ = [m for m in msg if m["role"] == "system"]
     if len(msg) > 1:
         msg_.append(msg[-1])
@@ -81,14 +92,16 @@ def message_fit_in(msg, max_length=4000):
     if c < max_length:
         return c, msg
 
+    # 截断较长的消息
     ll = num_tokens_from_string(msg_[0]["content"])
     ll2 = num_tokens_from_string(msg_[-1]["content"])
-    if ll / (ll + ll2) > 0.8:
+    if ll / (ll + ll2) > 0.8: # 截断system消息
         m = msg_[0]["content"]
         m = encoder.decode(encoder.encode(m)[: max_length - ll2])
         msg[0]["content"] = m
         return max_length, msg
 
+    # 截断用户消息
     m = msg_[-1]["content"]
     m = encoder.decode(encoder.encode(m)[: max_length - ll2])
     msg[-1]["content"] = m
@@ -205,21 +218,40 @@ async def full_question(tenant_id=None, llm_id=None, messages=[], language=None,
     from api.db.services.llm_service import LLMBundle
     from api.db.services.tenant_llm_service import TenantLLMService
 
+    # 加载LLM模型
     if not chat_mdl:
         if TenantLLMService.llm_id2llm_type(llm_id) == "image2text":
             chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
         else:
             chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_id)
+            
+            
+    # 多轮对话提取        
+    '''
+    只保留 user 和 assistant 消息,既只保留用户提问与llm的回答，忽略掉系统提示词,然后角色设置为内容
+    忽略 system 消息
+    格式化为 ROLE: content 格式
+    '''
     conv = []
     for m in messages:
         if m["role"] not in ["user", "assistant"]:
             continue
         conv.append("{}: {}".format(m["role"].upper(), m["content"]))
     conversation = "\n".join(conv)
+    
+    # 规则2: 相对日期转换
+    '''
+        输入: "yesterday"
+        输出: "2025-01-20"  # 假设今天是2025-01-21
+
+        输入: "tomorrow"
+        输出: "2025-01-22"
+    '''
     today = datetime.date.today().isoformat()
     yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
     tomorrow = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
 
+    # 渲染Jinja2模板
     template = PROMPT_JINJA_ENV.from_string(FULL_QUESTION_PROMPT_TEMPLATE)
     rendered_prompt = template.render(
         today=today,
@@ -229,8 +261,13 @@ async def full_question(tenant_id=None, llm_id=None, messages=[], language=None,
         language=language,
     )
 
+    # 调用LLM生成
     ans = await chat_mdl.async_chat(rendered_prompt, [{"role": "user", "content": "Output: "}])
+    
+    # 提取生成结果
     ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
+    
+    #错误处理
     return ans if ans.find("**ERROR**") < 0 else messages[-1]["content"]
 
 
@@ -239,18 +276,27 @@ async def cross_languages(tenant_id, llm_id, query, languages=[]):
     from api.db.services.llm_service import LLMBundle
     from api.db.services.tenant_llm_service import TenantLLMService
 
+    # 加载LLM模型
     if llm_id and TenantLLMService.llm_id2llm_type(llm_id) == "image2text":
         chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
     else:
         chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_id)
 
+    # 渲染提示词
     rendered_sys_prompt = PROMPT_JINJA_ENV.from_string(CROSS_LANGUAGES_SYS_PROMPT_TEMPLATE).render()
     rendered_user_prompt = PROMPT_JINJA_ENV.from_string(CROSS_LANGUAGES_USER_PROMPT_TEMPLATE).render(query=query, languages=languages)
 
+    #调用LLM翻译
     ans = await chat_mdl.async_chat(rendered_sys_prompt, [{"role": "user", "content": rendered_user_prompt}], {"temperature": 0.2})
+
+    #提取翻译结果
     ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
+
+    #错误处理
     if ans.find("**ERROR**") >= 0:
         return query
+        
+    # 解析翻译结果   
     return "\n".join([a for a in re.sub(r"(^Output:|\n+)", "", ans, flags=re.DOTALL).split("===") if a.strip()])
 
 

@@ -1,10 +1,12 @@
 + run-关注
 
+ragflow这个开源项目主要的使用用户面向中国大陆用户,为什么在设计提示词时都使用的英文。这背后的技术原理是什么？
 
-quart 模块
+在API调用和网页与LLM交互时，是否存在一些不同。例如会话上下文的处理。在API调用时，是否有会话中上下文的概念呢？
 
-文件:/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/api/apps/conversation_app.py 中
-completion()方法，总结该方法的业务逻辑，执行流程，以及相关技术点
+
+用100字以内，分条目整理问题精炼与多轮对话融合的实现要点，包含提示词部分
+
 
 加载对话Dialog ConversationService.get_by_id是如何完成的
 
@@ -22,7 +24,9 @@ completion()方法，总结该方法的业务逻辑，执行流程，以及相�
 
 + wenti-问题:
 
-tiktoken编码器进行编码
+Langfuse Tracer的作用
+没有看到重排阶段
+
 在chunk中，重叠百分比设置多少合适，高低有什么影响？如何智能的判断
 
 

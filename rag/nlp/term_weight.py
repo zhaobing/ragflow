@@ -149,8 +149,17 @@ class Dealer:
             return res
 
     def split(self, txt):
+        '''
+        返回一个经过空白符清洗 + 规则合词后的词元列表tks        
+        双普通字母词元相邻则合并，只要有一个是函数名 / 末尾非字母 / 无前置词元，就不合并
+        
+        :param self: Description
+        :param txt: Description
+        '''
         tks = []
+        #将文本中1 个及以上的连续空格 / 制表符替换成单个空格，解决原始文本中空白符不统一的问题（比如"a b\tc"会变成"a b c"）
         for t in re.sub(r"[ \t]+", " ", txt).split():
+            # 得到词元  例如 rag  flow 会被分割为  rag,flow
             if tks and re.match(r".*[a-zA-Z]$", tks[-1]) and \
                re.match(r".*[a-zA-Z]$", t) and tks and \
                self.ne.get(t, "") != "func" and self.ne.get(tks[-1], "") != "func":

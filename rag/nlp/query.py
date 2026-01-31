@@ -83,16 +83,36 @@ class FulltextQueryer:
         return txt
 
     def question(self, txt, tbl="qa", min_match: float = 0.6):
+        """
+        问题分析与查询构建方法
+
+        Args:
+            txt: 原始问题文本
+            tbl: 表格类型（默认qa）
+            min_match: 最小匹配比例（默认0.6）
+
+        Returns:
+            MatchTextExpr: 匹配表达式
+            keywords: 提取的关键词列表
+        """
         original_query = txt
+        
+        #中英文混排处理,切分开中文英文
         txt = FulltextQueryer.add_space_between_eng_zh(txt)
+        #规范化处理;全角转半角，繁体转简体;统一分隔符;转小写处理
         txt = re.sub(
             r"[ :|\r\n\t,，。？?/`!！&^%%()\[\]{}<>]+",
             " ",
             rag_tokenizer.tradi2simp(rag_tokenizer.strQ2B(txt.lower())),
         ).strip()
         otxt = txt
+
+        # 停用词移除;去除疑问词；
+        # 输入: "请问RAGFlow的检索流程是怎样的？"
+        # 输出: "RAGFlow检索流程"
         txt = FulltextQueryer.rmWWW(txt)
 
+        #英文处理流程
         if not self.is_chinese(txt):
             txt = FulltextQueryer.rmWWW(txt)
             tks = rag_tokenizer.tokenize(txt).split()
@@ -138,12 +158,16 @@ class FulltextQueryer:
                 return False
             return True
 
-        txt = FulltextQueryer.rmWWW(txt)
+        # 中文处理流程
+        txt = FulltextQueryer.rmWWW(txt) #去除问题的无效疑问词
         qs, keywords = [], []
+        # 术语分割
         for tt in self.tw.split(txt)[:256]:  # .split():
             if not tt:
                 continue
             keywords.append(tt)
+            
+            # 2. 权重计算
             twts = self.tw.weights([tt])
             syns = self.syn.lookup(tt)
             if syns and len(keywords) < 32:

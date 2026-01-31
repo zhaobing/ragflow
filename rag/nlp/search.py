@@ -126,9 +126,7 @@ class Dealer:
                 highlightFields = highlight
             
                 
-            #分词处理: 对问题进行分词
-            #关键词提取: 提取重要关键词
-            #构建查询表达式: 生成全文检索的 matchText 表达式
+            #分词处理: 对问题进行分词;关键词提取: 提取重要关键词;构建查询表达式: 生成全文检索的 matchText 表达式
             matchText, keywords = self.qryr.question(qst, min_match=0.3)
 
             # 当没有嵌入模型时，仅使用全文检索;只使用BM25等文本相似度算法 

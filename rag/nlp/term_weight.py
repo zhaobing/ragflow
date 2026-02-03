@@ -169,43 +169,64 @@ class Dealer:
         return tks
 
     def weights(self, tks, preprocess=True):
+        #数字模式
         num_pattern = re.compile(r"[0-9,.]{2,}$")
+        #短词组模式ab,ba,cd
         short_letter_pattern = re.compile(r"[a-z]{1,2}$")
+        #数字空格模式
         num_space_pattern = re.compile(r"[0-9. -]{2,}$")
+        #长词模式 
         letter_pattern = re.compile(r"[a-z. -]+$")
 
+        # 命名实体识别权重
         def ner(t):
+            #数字序列权重为2
             if num_pattern.match(t):
                 return 2
+            #短字母序列（1-2个字母）权重为0.01（极低权重）    
             if short_letter_pattern.match(t):
                 return 0.01
+            # 未识别实体权重为1 
             if not self.ne or t not in self.ne:
                 return 1
+            # 特定实体类型（公司、地点、学校、股票等）权重为3，有毒词为2，函数名为人名权重为    
             m = {"toxic": 2, "func": 1, "corp": 3, "loca": 3, "sch": 3, "stock": 3,
                  "firstnm": 1}
             return m[self.ne[t]]
 
+        # 词性标注权重
         def postag(t):
             t = rag_tokenizer.tag(t)
+            #代词、连词、副词权重为0.3（低权重）
             if t in set(["r", "c", "d"]):
                 return 0.3
+                
+            # 地名、机构名权重为3（高权重）
             if t in set(["ns", "nt"]):
                 return 3
+                
+            # 名词权重为2
             if t in set(["n"]):
                 return 2
+                
+            # 数字序列权重为2    
             if re.match(r"[0-9-]+", t):
                 return 2
             return 1
 
         def freq(t):
+            # 数字空格模式权重为3
             if num_space_pattern.match(t):
                 return 3
+            # 使用分词器获取词频，未找到时对字母序列返回300
             s = rag_tokenizer.freq(t)
+            # 长词模式，权重300 
             if not s and letter_pattern.match(t):
                 return 300
             if not s:
                 s = 0
 
+            # 对长词进行细粒度分词后计算最小子词频的1/6
             if not s and len(t) >= 4:
                 s = [tt for tt in rag_tokenizer.fine_grained_tokenize(t).split() if len(tt) > 1]
                 if len(s) > 1:
@@ -215,13 +236,18 @@ class Dealer:
 
             return max(s, 10)
 
+        # 文档频率计算
         def df(t):
+            # 数字空格模式权重为3
             if num_space_pattern.match(t):
                 return 5
+            # 文档频率 权重+3    
             if t in self.df:
                 return self.df[t] + 3
+            #长词模式 权重300    
             elif letter_pattern.match(t):
                 return 300
+            #未找到时对长词进行细粒度分词后计算最小子词文档频率的1/6    
             elif len(t) >= 4:
                 s = [tt for tt in rag_tokenizer.fine_grained_tokenize(t).split() if len(tt) > 1]
                 if len(s) > 1:
@@ -229,17 +255,44 @@ class Dealer:
 
             return 3
 
+        #逆文档频率计算
         def idf(s, N): return math.log10(10 + ((N - s + 0.5) / (s + 0.5)))
 
         tw = []
-        if not preprocess:
+        if not preprocess: #不需要分词合并预处理kk
+
+            # 词频计算
+            # 标准实现模式：计算该词元在文档中的词频，既词元出现次数/文档总词汇数量,然后进行idf平滑处理
+            # 实际实现为 :
+            # 1. 获取词元在词典中的词频+根据词性硬编码得到词频权重
+            # 2. 使用idf对估算词频权重进行平滑处理，反映词的"普遍重要性， 硬编码词汇数量为10000000
             idf1 = np.array([idf(freq(t), 10000000) for t in tks])
+            
+
+            # 文档频率计算
+            # 标准实现模式：计算整个文档包含目标词元t的文档数量，既目标词元出现文档数量/文档总数量
+            # 实际实现为 :
+            # 1. 根据目标词元的模式(数字-字符)硬编码文档频率权重，如果有文档频率文件，则使用文档频率文件
+            # 2. 使用idf对估算文档频率权重进行平滑处理，反映目标词元在整个文档中的 "区分能力"， 硬编码文档数量为10000000
             idf2 = np.array([idf(df(t), 1000000000) for t in tks])
+
+            # 计算双 IDF 混合
+            # 权重配比: 0.3 × IDF₁ + 0.7 × IDF₂
+            # 既 0.3*词频 + 0.7 * 文档频率
+            # 更看重文档频率（区分能力），兼顾词频（普遍性
+            # 举例：
+            # "人工智能" → freq 高 (常见)，但出现在很多文档 → df 也高 → IDF 较低
+            # "BERT 模型" → freq 低，出现在少数文档 → IDF 较高
+
+
+            # NER 实体加权  * postag 词性加权
+            # 最终权重 = (0.3 × IDF₁ + 0.7 × IDF₂) × NER权重 × 词性权重
             wts = (0.3 * idf1 + 0.7 * idf2) * \
                 np.array([ner(t) * postag(t) for t in tks])
+
             wts = [s for s in wts]
             tw = list(zip(tks, wts))
-        else:
+        else:#需要分词合并预处理
             for tk in tks:
                 tt = self.token_merge(self.pretoken(tk, True))
                 idf1 = np.array([idf(freq(t), 10000000) for t in tt])
@@ -249,5 +302,6 @@ class Dealer:
                 wts = [s for s in wts]
                 tw.extend(zip(tt, wts))
 
+        # 最终归一化,将所有权重转换为概率分布，总和为 1
         S = np.sum([s for _, s in tw])
         return [(t, s / S) for t, s in tw]

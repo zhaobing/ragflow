@@ -152,6 +152,19 @@ class FulltextQueryer:
             ), keywords
 
         def need_fine_grained_tokenize(tk):
+            """
+            判断是否需要对该 token 进行细粒度二次分词。
+            
+            规则：
+            1. 长度小于 3 的 token 不再切分（太短无意义）。
+            2. 仅由数字、小写字母及少量常用符号（.+#_*-）组成的 token 视为已足够原子，不再切分。
+            3. 其余情况（如长中文串、混合大小写、含汉字等）返回 True，表示需要进一步切分。
+            
+            :param tk: 待判断的 token 字符串
+            :return: True  -> 需要细粒度切分
+                    False -> 保持原 token，不再切分
+            """ 
+
             if len(tk) < 3:
                 return False
             if re.match(r"[0-9a-z\.\+#_\*-]+$", tk):
@@ -169,12 +182,17 @@ class FulltextQueryer:
             
             # 2. 权重计算
             twts = self.tw.weights([tt])
+            
+            # 查找术语同义词
             syns = self.syn.lookup(tt)
             if syns and len(keywords) < 32:
                 keywords.extend(syns)
             logging.debug(json.dumps(twts, ensure_ascii=False))
             tms = []
+            # 按照权重降序遍历 分词词元tk与权重w
             for tk, w in sorted(twts, key=lambda x: x[1] * -1):
+                # 将复合词拆分为更小的语义单元,例如："人工智能" → "人工 智能"
+
                 sm = (
                     rag_tokenizer.fine_grained_tokenize(tk).split()
                     if need_fine_grained_tokenize(tk)

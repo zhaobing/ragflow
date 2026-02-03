@@ -114,3 +114,11 @@ RAGFlow supports switching between Elasticsearch (default) and Infinity:
 - Docker & Docker Compose
 - uv package manager
 - 16GB+ RAM, 50GB+ disk space
+
+## 重要文件目录结构 
+分析文件目录:/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/01-dig/分析结果01
+该目录有命名规则,根据不同的模块存放,并且分析分档有递增规则
+
+
+
+

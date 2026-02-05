@@ -173,26 +173,45 @@ class FulltextQueryer:
 
         # 中文处理流程
         txt = FulltextQueryer.rmWWW(txt) #去除问题的无效疑问词
+
         qs, keywords = [], []
-        # 术语分割
+
+        # 术语分割-应该为最粗粒度的分割 根据空格给切出来
+        # 合并相邻的英文词元,保留中文分隔,清理空白符
+        #  "RAGFlow AI 人工智能" -> ["ragflow", "ai", "人工智能"]
+        # txt = 程鹏是哪一年毕业的？毕业于什么院校？-> [程鹏是哪一年毕业的,毕业于院校]
         for tt in self.tw.split(txt)[:256]:  # .split():
+            
+            # tt = 程鹏是哪一年毕业的
+            # tt = 毕业于院校
+            # tt为术语,最粗粒度的拆分
+
             if not tt:
                 continue
+            
+            # 分割完成的粗粒度术语，添加到关键词中
             keywords.append(tt)
             
-            # 2. 权重计算
+            # 2. 对于术语进行分词并进行权重计算,通过文档频率，词频等计算 当前关键词的权重
+            # 粗粒度关键词集合计算：最终权重 = (0.3 × IDF₁ + 0.7 × IDF₂) × NER权重 × 词性权重
+            # 得到twts=复合词集合(带权重)
             twts = self.tw.weights([tt])
             
-            # 查找术语同义词
+            # 查找术语的同义词，找到术语同义词，一并加入到关键词结果集合中
             syns = self.syn.lookup(tt)
             if syns and len(keywords) < 32:
                 keywords.extend(syns)
             logging.debug(json.dumps(twts, ensure_ascii=False))
-            tms = []
-            # 按照权重降序遍历 分词词元tk与权重w
-            for tk, w in sorted(twts, key=lambda x: x[1] * -1):
-                # 将复合词拆分为更小的语义单元,例如："人工智能" → "人工 智能"
 
+
+            tms = []
+
+            # 按照权重降序遍历 复合词twts  枚举每个复合词tk 与 其权重w
+            for tk, w in sorted(twts, key=lambda x: x[1] * -1):
+
+                # 将复合关词tk 拆分 为更小的语义单元sm,例如："人工智能" → "人工 智能"
+                # 细粒度分词会使用dfs枚举分词方案，并且对各个分词方案进行评分
+                # 评分标准 奖励 少切，长词，既 切分的细一点，但是不要太碎
                 sm = (
                     rag_tokenizer.fine_grained_tokenize(tk).split()
                     if need_fine_grained_tokenize(tk)
@@ -206,38 +225,83 @@ class FulltextQueryer:
                     )
                     for m in sm
                 ]
+
+                #sm为去除特殊符号的 细粒度关键词集合
                 sm = [FulltextQueryer.sub_special_char(m) for m in sm if len(m) > 1]
                 sm = [m for m in sm if len(m) > 1]
 
+                # 关键词结果集合 keywords 如果数量还不够32，那么加入复合词，和复合词的细粒度关键词
                 if len(keywords) < 32:
                     keywords.append(re.sub(r"[ \\\"']+", "", tk))
                     keywords.extend(sm)
 
+                # 寻找复合词的同义词,并加入关键词
                 tk_syns = self.syn.lookup(tk)
                 tk_syns = [FulltextQueryer.sub_special_char(s) for s in tk_syns]
                 if len(keywords) < 32:
                     keywords.extend([s for s in tk_syns if s])
+
+                # 对复合词的同义词，再进行细粒度分词，获取得分次高的分词方案
                 tk_syns = [rag_tokenizer.fine_grained_tokenize(s) for s in tk_syns if s]
                 tk_syns = [f"\"{s}\"" if s.find(" ") > 0 else s for s in tk_syns]
 
                 if len(keywords) >= 32:
                     break
 
+
+
+                # 步骤 6: 构建词元查询 (query.py:198-215)
+                # 处理原词
                 tk = FulltextQueryer.sub_special_char(tk)
+
+                # 添加原词,如果原词中有多个词元，用""包裹
                 if tk.find(" ") > 0:
                     tk = '"%s"' % tk
+                    
+                # 添加复合词的同义词的细粒度分词 (低权重 0.2),此时tk_syns为复合词的同义词的细粒度分词
                 if tk_syns:
                     tk = f"({tk} OR (%s)^0.2)" % " ".join(tk_syns)
+                    
+                # 添加复合词的细粒度分词 (低权重 0.5, 近似匹配 ~2)
                 if sm:
                     tk = f'{tk} OR "%s" OR ("%s"~2)^0.5' % (" ".join(sm), " ".join(sm))
+
+                # 添加复合词和其权重 (查询表达式, 权重)
                 if tk.strip():
                     tms.append((tk, w))
 
+                #此时，原词术语tt，复合词，复合词的同义词的细粒度分词，复合词的细粒度分词 都已经考虑到
+
+           
+                '''
+                Lucene 查询语法:
+
+                tk = "人工智能"
+                sm = ["人工", "智能"]
+                tk_syns = ["机器智能"]
+
+                构建:
+                "人工智能"                    # 精确匹配
+                OR ("机器智能")^0.2           # 同义词，权重 0.2
+                OR "人工 智能"                # 细粒度分词（短语）
+                OR ("人工 智能")~2^0.5        # 近似匹配，间隔2词内
+
+                最终:
+                "人工智能" OR ("机器智能")^0.2 OR "人工 智能" OR ("人工 智能")~2^0.5
+                
+                '''
+
+
+
+            #步骤 7: 组合词元查询
+            # 按权重组合所有词元
             tms = " ".join([f"({t})^{w}" for t, w in tms])
 
+            # 如果有多个复合词，添加原术语的近似匹配
             if len(twts) > 1:
                 tms += ' ("%s"~2)^1.5' % rag_tokenizer.tokenize(tt)
 
+            # 构建术语级同义词查询
             syns = " OR ".join(
                 [
                     '"%s"'
@@ -245,6 +309,8 @@ class FulltextQueryer:
                     for s in syns
                 ]
             )
+            
+            # 组合: 术语查询 (高权重) OR 同义词 (低权重)
             if syns and tms:
                 tms = f"({tms})^5 OR ({syns})^0.7"
 
@@ -254,9 +320,14 @@ class FulltextQueryer:
             query = " OR ".join([f"({t})" for t in qs if t])
             if not query:
                 query = otxt
+
+
+            # query = '((毕业)^0.5735432571633446 ("程 鹏")^0.3280436483358887 (哪一年 OR "一年" OR ("一年"~2)^0.5)^0.09841309450076662 ("程 鹏 是 哪一年 毕业 的"~2)^1.5) OR ((毕业)^0.5 (院校)^0.5 ("毕业 于 院校"~2)^1.5)'
+    
             return MatchTextExpr(
                 self.query_fields, query, 100, {"minimum_should_match": min_match, "original_query": original_query}
             ), keywords
+            
         return None, keywords
 
     def hybrid_similarity(self, avec, bvecs, atks, btkss, tkweight=0.3, vtweight=0.7):

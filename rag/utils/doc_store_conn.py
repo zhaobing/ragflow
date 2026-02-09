@@ -122,9 +122,10 @@ class MatchTensorExpr(ABC):
 
 class FusionExpr(ABC):
     def __init__(self, method: str, topn: int, fusion_params: dict | None = None):
-        self.method = method
-        self.topn = topn
-        self.fusion_params = fusion_params
+        self.method = method # 融合方法："weighted_sum"
+        self.topn = topn # 返回结果数量
+        self.fusion_params = fusion_params  # 融合参数
+        # final_score = (bm25_score × 0.05) + (cosine_similarity × 0.95)
 
 
 MatchExpr = MatchTextExpr | MatchDenseExpr | MatchSparseExpr | MatchTensorExpr | FusionExpr

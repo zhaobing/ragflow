@@ -170,7 +170,6 @@ final_score = vector_similarity_weight * vector_score +
 - `top_n`: 每个知识库检索数量
 - `top_k`: 最终保留数量
 
-**输出文档**: `705-知识检索流程详解.md`
 
 ---
 
@@ -221,8 +220,6 @@ knowledges = kb_prompt(kbinfos, max_tokens)
 ##1$$ 第二段检索内容...
 """
 ```
-
-**输出文档**: `707-知识组装与上下文构建.md`
 
 ---
 

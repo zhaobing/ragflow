@@ -146,6 +146,7 @@ class Dealer:
 
                 # 构建融合表达式;向量检索主导（95%），重视语义相似;全文检索辅助（5%），提升关键词匹配
                 fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.05,0.95"})
+                # 表达式组装 ,组装好 BM25查询表达式，vector查询表达式，融合计算表达式
                 matchExprs = [matchText, matchDense, fusionExpr]
 
                 # 执行混合检索

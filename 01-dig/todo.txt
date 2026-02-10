@@ -249,8 +249,6 @@ answer, idx = retriever.insert_citations(
 )
 ```
 
-**输出文档**: `708-引用插入与自动标注机制.md`
-
 ---
 
 ### 任务8: LLM答案生成与流式输出
@@ -285,7 +283,6 @@ async for ans in chat_mdl.async_chat_streamly(prompt, msg[1:], gen_conf):
     yield {"answer": ans, "reference": {}, "audio_binary": tts(...)}
 ```
 
-**输出文档**: `709-LLM答案生成与流式输出机制.md`
 
 ---
 

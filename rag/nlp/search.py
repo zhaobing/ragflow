@@ -387,19 +387,19 @@ class Dealer:
 
     def retrieval(
         self,
-        question,
+        question,# 用户查询问题
         embd_mdl,
-        tenant_ids,
-        kb_ids,
-        page,
-        page_size,
-        similarity_threshold=0.2,
-        vector_similarity_weight=0.3,
-        top=1024,
-        doc_ids=None,
-        aggs=True,
-        rerank_mdl=None,
-        highlight=False,
+        tenant_ids,#租户ID（对应数据索引隔离
+        kb_ids, #知识库ID列表，限定检索范围
+        page, #当前页码（从1开始）
+        page_size,#每页返回的chunk数量
+        similarity_threshold=0.2,#相似度阈值，低于此值的结果会被过滤
+        vector_similarity_weight=0.3,#向量相似度权重（0-1），用于rerank时混合词相似度和向量相似度
+        top=1024,#初始召回的top-k数量
+        doc_ids=None,#文档ID列表，用于限定检索范围
+        aggs=True,#是否进行文档聚合统计
+        rerank_mdl=None,#重排序模型（如BGE-reranker）
+        highlight=False,#是否返回高亮结果
         rank_feature: dict | None = {PAGERANK_FLD: 10},
     ):
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
@@ -410,7 +410,11 @@ class Dealer:
         # 构建搜索请求
         # kb_ids:知识库ID
         # doc_ids:文档ID
-        # 
+        # page:计算后的页码，根据 RERANK_LIMIT 调整
+        # size:每次从数据源获取的数量（等于 RERANK_LIMIT）
+        # topk:向量检索的top-k数量（来自参数 top）
+        # similarity:向量相似度阈值（来自参数 similarity_threshold）
+        # available_int:可用性过滤，1 表示只检索可用chunk
         RERANK_LIMIT = math.ceil(64 / page_size) * page_size if page_size > 1 else 1
         req = {
             "kb_ids": kb_ids,
@@ -432,7 +436,7 @@ class Dealer:
 
         # 3. 重排序
         if rerank_mdl and sres.total > 0:
-            # 使用模型重排序
+            # 使用模型重排序；sim综合得分，tsim词元相似度，vsim向量相似度
             sim, tsim, vsim = self.rerank_by_model(
                 rerank_mdl,
                 sres,
@@ -460,13 +464,16 @@ class Dealer:
                 )
 
         # 4. 相似度过滤和排序
+        # 将重排序返回的 sim 列表转换为 numpy 数组，提高后续计算效率 
         sim_np = np.array(sim, dtype=np.float64)
-        if sim_np.size == 0:
+        if sim_np.size == 0: #检查数组是否为空（没有检索结果），直接返回空结果
             ranks["doc_aggs"] = []
             return ranks
-
+        
+        #降序排序,并获得降序排序后的索引idx
         sorted_idx = np.argsort(sim_np * -1)
 
+        # 保留相似度大于阈值的结果，低于阈值的过滤掉
         valid_idx = [int(i) for i in sorted_idx if sim_np[i] >= similarity_threshold]
         filtered_count = len(valid_idx)
         ranks["total"] = int(filtered_count)
@@ -483,34 +490,45 @@ class Dealer:
         page_idx = valid_idx[begin:end]
 
         # 6. 构建返回结果?
+        # 查询向量的维度
         dim = len(sres.query_vector)
+        # 构建向量列名（如 q_1024_vec）
         vector_column = f"q_{dim}_vec"
+        # 创建零向量作为默认值（处理缺失的向量数据）
         zero_vector = [0.0] * dim
 
+        # 遍历当前页文档的chunk page_idx的含义实际是chunk的idx
         for i in page_idx:
+            # chunk_id：chunk的唯一标识符
             id = sres.ids[i]
+            # 获取到chunk
             chunk = sres.field[id]
+            # 文档名称 
             dnm = chunk.get("docnm_kwd", "")
+            # 所属文档ID
             did = chunk.get("doc_id", "")
 
+            # chunk在文档中的位置
             position_int = chunk.get("position_int", [])
             d = {
-                "chunk_id": id,
-                "content_ltks": chunk["content_ltks"],
-                "content_with_weight": chunk["content_with_weight"],
-                "doc_id": did,
-                "docnm_kwd": dnm,
-                "kb_id": chunk["kb_id"],
-                "important_kwd": chunk.get("important_kwd", []),
-                "image_id": chunk.get("img_id", ""),
-                "similarity": float(sim_np[i]),
-                "vector_similarity": float(vsim[i]),
-                "term_similarity": float(tsim[i]),
-                "vector": chunk.get(vector_column, zero_vector),
-                "positions": position_int,
-                "doc_type_kwd": chunk.get("doc_type_kwd", ""),
-                "mom_id": chunk.get("mom_id", ""),
+                "chunk_id": id, #chunk的唯一标识符
+                "content_ltks": chunk["content_ltks"], #分词后的内容
+                "content_with_weight": chunk["content_with_weight"], #带权重的内容
+                "doc_id": did,#所属文档ID
+                "docnm_kwd": dnm, #文档名称
+                "kb_id": chunk["kb_id"], #知识库ID
+                "important_kwd": chunk.get("important_kwd", []), #重要关键词列表
+                "image_id": chunk.get("img_id", ""), #关联图片ID（如果有）
+                "similarity": float(sim_np[i]), #综合相似度分数
+                "vector_similarity": float(vsim[i]), #向量相似度分数
+                "term_similarity": float(tsim[i]), #词元相似度分数
+                "vector": chunk.get(vector_column, zero_vector),#向量表示
+                "positions": position_int, #chunk在文档中的位置
+                "doc_type_kwd": chunk.get("doc_type_kwd", ""), #文档类型
+                "mom_id": chunk.get("mom_id", ""), #父chunk ID（用于层次化chunk）
             }
+
+            # 高亮显示的内容（可选）
             if highlight and sres.highlight:
                 if id in sres.highlight:
                     d["highlight"] = remove_redundant_spaces(sres.highlight[id])

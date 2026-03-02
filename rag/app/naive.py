@@ -677,7 +677,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                 if callback:
                     callback(0.05, f"Failed to chunk embed {embed_filename}: {e}")
                 continue
-
+    
+    #dig-zhaob-word解析与分块
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         if parser_config.get("analyze_hyperlink", False) and is_root:
@@ -693,12 +694,16 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                     sub_url_res = chunk(f"{index}.html", html_bytes, callback=callback, lang=lang, is_root=False, **kwargs)
                 url_res.extend(sub_url_res)
 
+
+        #word文档解析与分块调用
         # fix "There is no item named 'word/NULL' in the archive", referring to https://github.com/python-openxml/python-docx/issues/1105#issuecomment-1298075246
         _SerializedRelationships.load_from_xml = load_from_xml_v2
         sections, tables = Docx()(filename, binary)
 
+        #word文档解析与分块调用,识别其中的图片和表格么？
         tables = vision_figure_parser_docx_wrapper(sections=sections, tbls=tables, callback=callback, **kwargs)
 
+        #提取表格？
         res = tokenize_table(tables, doc, is_english)
         callback(0.8, "Finish parsing.")
 

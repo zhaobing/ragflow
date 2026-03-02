@@ -230,6 +230,7 @@ async def build_chunks(task, progress_callback):
         return []
 
     # digzhaob
+    # 准备进入文档的解析与切片流程,根据任务配置获取到chunker
     chunker = FACTORY[task["parser_id"].lower()]
     try:
         st = timer()
@@ -249,6 +250,7 @@ async def build_chunks(task, progress_callback):
         logging.exception("Chunking {}/{} got exception".format(task["location"], task["name"]))
         raise
 
+    # 执行解析与分块
     try:
         async with chunk_limiter:
             cks = await asyncio.to_thread(

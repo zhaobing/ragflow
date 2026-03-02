@@ -111,10 +111,17 @@ def message_fit_in(msg, max_length=4000):
 def kb_prompt(kbinfos, max_tokens, hash_id=False):
     from api.db.services.document_service import DocumentService
 
+    # 步骤1: 提取知识块内容
+    # 从 kbinfos["chunks"] 中提取每个 chunk 的内容字段
     knowledges = [get_value(ck, "content", "content_with_weight") for ck in kbinfos["chunks"]]
+    # 原始知识块总数
     kwlg_len = len(knowledges)
+    # 已使用的token数
     used_token_count = 0
+    # 实际包含的chunk数
     chunks_num = 0
+    
+    # Token计数与截断控制
     for i, c in enumerate(knowledges):
         if not c:
             continue
@@ -125,6 +132,7 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
             logging.warning(f"Not all the retrieval into prompt: {len(knowledges)}/{kwlg_len}")
             break
 
+    # 获取文档元数据
     docs = DocumentService.get_by_ids([get_value(ck, "doc_id", "document_id") for ck in kbinfos["chunks"][:chunks_num]])
     docs = {d.id: d.meta_fields for d in docs}
 

@@ -1,10 +1,12 @@
 
 
 # 后端启动过程
+
 docker compose -f docker/docker-compose-base.yml --profile elasticsearch up -d redis mysql minio
 export HF_ENDPOINT=https://hf-mirror.com
 source .venv/bin/activate
 export PYTHONPATH=$(pwd)
+
 bash docker/launch_backend_debug.sh
 bash docker/launch_backend_service.sh
 

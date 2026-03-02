@@ -401,14 +401,18 @@ class LLMBundle(LLM4Tenant):
 
     async def async_chat_streamly(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
         total_tokens = 0
+        # ans: 累积完整的响应文本
         ans = ""
+
+        # 流式函数选择
         if self.is_tools and getattr(self.mdl, "is_tools", False) and hasattr(self.mdl, "async_chat_streamly_with_tools"):
             stream_fn = getattr(self.mdl, "async_chat_streamly_with_tools", None)
         elif hasattr(self.mdl, "async_chat_streamly"):
             stream_fn = getattr(self.mdl, "async_chat_streamly", None)
         else:
             raise RuntimeError(f"Model {self.mdl} does not implement async_chat or async_chat_with_tools")
-
+            
+        # Langfuse   追踪初始化
         generation = None
         if self.langfuse:
             generation = self.langfuse.start_generation(trace_context=self.trace_context, name="chat_streamly", model=self.llm_name, input={"system": system, "history": history})
@@ -418,16 +422,23 @@ class LLMBundle(LLM4Tenant):
             use_kwargs = self._clean_param(chat_partial, **kwargs)
             try:
                 async for txt in chat_partial(**use_kwargs):
+                    # ... 处理每个文本块
+
+                    # Token 计数处理
                     if isinstance(txt, int):
                         total_tokens = txt
                         break
 
+                    # 处理 o1 等模型的 <think> 推理标签。当文本以 `</think>` 结尾时，移除这个标签，避免向用户展示推理过程。
                     if txt.endswith("</think>"):
                         ans = ans[: -len("</think>")]
 
+
+                    # 在非详细模式下，使用正则表达式移除 <tool_call> 标签内的工具调用内容，使输出更简洁。
                     if not self.verbose_tool_use:
                         txt = re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)
 
+                    # 文本累积与输出
                     ans += txt
                     yield ans
             except Exception as e:
@@ -435,8 +446,13 @@ class LLMBundle(LLM4Tenant):
                     generation.update(output={"error": str(e)})
                     generation.end()
                 raise
+            
+            # Token 使用记录
             if total_tokens and not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, total_tokens, self.llm_name):
                 logging.error("LLMBundle.async_chat_streamly can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.llm_name, total_tokens))
+
+
+            # 更新 Langfuse 追踪记录，保存最终输出和 token 使用情况。
             if generation:
                 generation.update(output={"output": ans}, usage_details={"total_tokens": total_tokens})
                 generation.end()

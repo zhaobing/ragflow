@@ -1,0 +1,13 @@
+
+
+
+我希望对word解析与切片以及持久化流程展开研究，请为我分析并安排研究任务,任务内容写入到路径:/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/01-dig/分析结果01/21-word解析
+
+/Users/zhaob/workspace/zhaob/zwk03/py-wk/ragflow/01-dig/分析结果01/21-word解析
+
+
+模型切换到doubao模型? 先使用R1
+
+
+
+

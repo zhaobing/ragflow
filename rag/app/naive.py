@@ -310,17 +310,26 @@ class Docx(DocxParser):
         return ""
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000):
+        # 1. 文档加载 
         self.doc = Document(
             filename) if not binary else Document(BytesIO(binary))
+
+        # 当前页码计数器
         pn = 0
-        lines = []
-        last_image = None
+        lines = [] ## 段落列表: [(text, [images], style), ...]
+        last_image = None # 缓存的图片(用于空段落的图片关联)
+
+        # 2. 段落遍历与处理
         for p in self.doc.paragraphs:
+
+            # 页码范围检查
             if pn > to_page:
                 break
             if from_page <= pn < to_page:
+                #非空段落处理 
                 if p.text.strip():
                     if p.style and p.style.name == 'Caption':
+                        #提取前一个段落的图片 ,关联图片与标题?
                         former_image = None
                         if lines and lines[-1][1] and lines[-1][2] != 'Caption':
                             former_image = lines[-1][1].pop()
@@ -329,32 +338,40 @@ class Docx(DocxParser):
                             last_image = None
                         lines.append((self.__clean(p.text), [former_image], p.style.name))
                     else:
+                        # 普通段落处理
                         current_image = self.get_picture(self.doc, p)
                         image_list = [current_image]
                         if last_image:
                             image_list.insert(0, last_image)
                             last_image = None
                         lines.append((self.__clean(p.text), image_list, p.style.name if p.style else ""))
-                else:
+                else:#空段落处理
                     if current_image := self.get_picture(self.doc, p):
                         if lines:
                             lines[-1][1].append(current_image)
                         else:
                             last_image = current_image
+            #分页检测                
             for run in p.runs:
                 if 'lastRenderedPageBreak' in run._element.xml:
                     pn += 1
                     continue
                 if 'w:br' in run._element.xml and 'type="page"' in run._element.xml:
                     pn += 1
+
+        # 图片合并            
         new_line = [(line[0], reduce(concat_img, line[1]) if line[1] else None) for line in lines]
 
+        # 表格处理
         tbls = []
+        # 获取层级标题
         for i, tb in enumerate(self.doc.tables):
             title = self.__get_nearest_title(i, filename)
             html = "<table>"
             if title:
                 html += f"<caption>Table Location: {title}</caption>"
+                
+            #构建HTML表格    
             for r in tb.rows:
                 html += "<tr>"
                 i = 0
